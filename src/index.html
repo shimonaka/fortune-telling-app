@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>タレントナビゲーター - 人材育成分析システム</title>
+  <link rel="stylesheet" href="/sparkle-design.css">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 class="character-8-bold-pro">
+        <span class="icon-6-fill-0 material-symbols-outlined">navigation</span>
+        タレントナビゲーター
+      </h1>
+      <p class="character-3-regular-pro">人材育成分析システム</p>
+    </div>
+
+    <!-- 入力フォーム -->
+    <div class="form-section" id="form-section">
+      <div class="error" id="error"></div>
+      
+      <!-- ステップインジケーター -->
+      <div class="step-indicator" id="step-indicator">
+        <div class="step-item active" data-step="1">
+          <div class="step-number">1</div>
+          <div class="step-label character-2-regular-pro text-middle">基本情報</div>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-item" data-step="2">
+          <div class="step-number">2</div>
+          <div class="step-label character-2-regular-pro text-middle">MBTIタイプ</div>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-item" data-step="3">
+          <div class="step-number">3</div>
+          <div class="step-label character-2-regular-pro text-middle">分析の目的</div>
+        </div>
+      </div>
+
+      <form id="fortune-form">
+        <!-- ステップ1: 基本情報 -->
+        <div class="form-step active" id="step-1" data-step="1">
+          <h2 class="character-6-bold-pro text-primary">基本情報</h2>
+          <p class="character-3-regular-pro text-middle mb-5">生年月日と性別を入力してください</p>
+          
+          <div class="form-group">
+            <label class="character-3-bold-pro text-high">生年月日 <span class="text-negative">*</span></label>
+            <div class="form-row">
+              <div>
+                <label for="year" class="character-2-regular-pro text-middle">年</label>
+                <input type="number" id="year" name="year" min="1900" max="2100" placeholder="1987" required class="character-3-regular-pro">
+                <span class="field-error character-2-regular-pro text-negative" id="year-error"></span>
+              </div>
+              <div>
+                <label for="month" class="character-2-regular-pro text-middle">月</label>
+                <input type="number" id="month" name="month" min="1" max="12" placeholder="4" required class="character-3-regular-pro">
+                <span class="field-error character-2-regular-pro text-negative" id="month-error"></span>
+              </div>
+              <div>
+                <label for="day" class="character-2-regular-pro text-middle">日</label>
+                <input type="number" id="day" name="day" min="1" max="31" placeholder="15" required class="character-3-regular-pro">
+                <span class="field-error character-2-regular-pro text-negative" id="day-error"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="hour" class="character-3-bold-pro text-high">生まれた時間（オプション）</label>
+            <input type="time" id="hour" name="hour" class="character-3-regular-pro">
+            <small class="character-2-regular-pro text-low">時間がわからない場合は空欄でも可</small>
+          </div>
+
+          <div class="form-group">
+            <label for="gender" class="character-3-bold-pro text-high">性別 <span class="text-negative">*</span></label>
+            <select id="gender" name="gender" required class="character-3-regular-pro">
+              <option value="">選択してください</option>
+              <option value="male">男性</option>
+              <option value="female">女性</option>
+              <option value="other">その他</option>
+            </select>
+            <span class="field-error character-2-regular-pro text-negative" id="gender-error"></span>
+          </div>
+
+          <div class="step-actions">
+            <button type="button" class="step-btn-next character-4-bold-pro" onclick="goToStep(2)">次へ</button>
+          </div>
+        </div>
+
+        <!-- ステップ2: MBTIタイプ -->
+        <div class="form-step" id="step-2" data-step="2">
+          <h2 class="character-6-bold-pro text-primary">MBTIタイプ</h2>
+          <p class="character-3-regular-pro text-middle mb-5">あなたのMBTIタイプを選択または診断してください</p>
+          
+          <div class="form-group">
+            <label class="character-3-bold-pro text-high">MBTIタイプ</label>
+            <div class="radio-group">
+              <label class="character-3-regular-pro text-high cursor-pointer">
+                <input type="radio" name="mbti-mode" value="known" checked>
+                既に知っている
+              </label>
+              <label class="character-3-regular-pro text-high cursor-pointer">
+                <input type="radio" name="mbti-mode" value="unknown">
+                MBTIがわからない（簡易診断を受ける）
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" id="mbti-select-group">
+            <label for="mbti-type" class="character-3-bold-pro text-high">MBTIタイプを選択 <span class="text-negative">*</span></label>
+            <select id="mbti-type" name="mbti-type" class="character-3-regular-pro">
+              <option value="">選択してください</option>
+              <option value="INTJ">INTJ - 建築家</option>
+              <option value="INTP">INTP - 論理学者</option>
+              <option value="ENTJ">ENTJ - 指揮官</option>
+              <option value="ENTP">ENTP - 討論者</option>
+              <option value="INFJ">INFJ - 提唱者</option>
+              <option value="INFP">INFP - 仲介者</option>
+              <option value="ENFJ">ENFJ - 主人公</option>
+              <option value="ENFP">ENFP - 運動家</option>
+              <option value="ISTJ">ISTJ - 管理者</option>
+              <option value="ISFJ">ISFJ - 擁護者</option>
+              <option value="ESTJ">ESTJ - 幹部</option>
+              <option value="ESFJ">ESFJ - 領事官</option>
+              <option value="ISTP">ISTP - 巨匠</option>
+              <option value="ISFP">ISFP - 冒険家</option>
+              <option value="ESTP">ESTP - 起業家</option>
+              <option value="ESFP">ESFP - エンターテイナー</option>
+            </select>
+            <span class="field-error character-2-regular-pro text-negative" id="mbti-type-error"></span>
+          </div>
+
+          <div class="form-group" id="mbti-diagnosis-group" style="display: none;">
+            <label class="character-3-bold-pro text-high">MBTI簡易診断</label>
+            <div id="mbti-questions"></div>
+          </div>
+
+          <div class="step-actions">
+            <button type="button" class="step-btn-prev character-3-bold-pro" onclick="goToStep(1)">戻る</button>
+            <button type="button" class="step-btn-next character-4-bold-pro" onclick="goToStep(3)">次へ</button>
+          </div>
+        </div>
+
+        <!-- ステップ3: 分析の目的 -->
+        <div class="form-step" id="step-3" data-step="3">
+          <h2 class="character-6-bold-pro text-primary">分析の目的</h2>
+          <p class="character-3-regular-pro text-middle mb-5">結果の種類を選択してください</p>
+          
+          <div class="form-group">
+            <label class="character-3-bold-pro text-high">結果の種類</label>
+            <div class="radio-group">
+              <label class="character-3-regular-pro text-high cursor-pointer">
+                <input type="radio" name="purpose" value="personal" checked>
+                本人向け（キャリア特性、適性、成長領域など）
+              </label>
+              <label class="character-3-regular-pro text-high cursor-pointer">
+                <input type="radio" name="purpose" value="employer">
+                雇用主向け（成長予測、リスク管理、育成プランなど）
+              </label>
+            </div>
+          </div>
+
+          <div class="step-actions">
+            <button type="button" class="step-btn-prev character-3-bold-pro" onclick="goToStep(2)">戻る</button>
+            <button type="submit" class="submit-btn character-4-bold-pro">分析を実行する</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <p class="character-3-regular-pro text-middle">分析を実行中...</p>
+      <div class="skeleton-container" style="margin-top: var(--spacing-8); max-width: 800px; margin-left: auto; margin-right: auto;">
+        <div class="skeleton skeleton-title"></div>
+        <div class="skeleton skeleton-text"></div>
+        <div class="skeleton skeleton-text" style="width: 80%;"></div>
+        <div class="skeleton skeleton-card" style="margin-top: var(--spacing-4);"></div>
+      </div>
+    </div>
+
+    <div class="result-section" id="result-section"></div>
+  </div>
+
+  <script type="module" src="./app.ts"></script>
+</body>
+</html>
