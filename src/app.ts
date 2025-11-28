@@ -1,13 +1,20 @@
-/**
- * タレントナビゲーターのメインロジック
- * 人材育成分析システム（四柱推命×MBTI統合）
+﻿/**
+ * 人材育成分析システムのメインロジック
+ * 四柱推命×MBTI統合
  */
 
 import { calculateFortune } from './fortune/calculations.js';
 import { calculateFourPillars } from './fortune/shichu-suimei.js';
 import { MBTI_TYPES, MBTI_QUESTIONS, calculateMBTIFromAnswers, type MBTIType } from './fortune/mbti.js';
 import { TALENT_NUMBER_TRAITS, ESSENCE_NUMBER_TRAITS, INQUIRY_NUMBER_TRAITS } from './fortune/prompt-data.js';
-import type { CompleteFortuneResult } from './fortune/types.js';
+import { generateYUICode, parseYUICode, analyzeCompatibility } from './fortune/compatibility.js';
+import type { CompleteFortuneResult, FortuneResult, FourPillarsResult } from './fortune/types.js';
+import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { analyzeRisk } from './fortune/risk-logic.js';
+import { calculateTeamRoles } from './fortune/role-logic.js';
+import { analyzeSynergy } from './fortune/synergy-logic.js';
 
 // DOM要素の取得
 const form = document.getElementById('fortune-form') as HTMLFormElement;
@@ -25,6 +32,542 @@ const purposeRadios = document.querySelectorAll('input[name="purpose"]') as Node
 const errorDiv = document.getElementById('error') as HTMLDivElement;
 const loadingDiv = document.getElementById('loading') as HTMLDivElement;
 const resultSection = document.getElementById('result-section') as HTMLDivElement;
+const adminModeBtn = document.getElementById('admin-mode-btn') as HTMLButtonElement;
+const bulkAnalysisSection = document.getElementById('bulk-analysis-section') as HTMLDivElement;
+const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
+const fileInput = document.getElementById('file-input') as HTMLInputElement;
+const bulkResult = document.getElementById('bulk-result') as HTMLDivElement;
+const downloadPdfBtn = document.getElementById('download-pdf-btn') as HTMLButtonElement;
+
+// Admin Mode Toggle
+let isAdminMode = false;
+adminModeBtn.addEventListener('click', () => {
+  isAdminMode = !isAdminMode;
+  if (isAdminMode) {
+    form.style.display = 'none';
+    bulkAnalysisSection.style.display = 'block';
+    adminModeBtn.innerHTML = '<span class="material-symbols-outlined">person</span> 個人分析モードに戻る';
+    adminModeBtn.classList.replace('btn-secondary', 'btn-primary');
+  } else {
+    form.style.display = 'block';
+    bulkAnalysisSection.style.display = 'none';
+    adminModeBtn.innerHTML = '<span class="material-symbols-outlined">admin_panel_settings</span> 管理者モード（一括分析）';
+    adminModeBtn.classList.replace('btn-primary', 'btn-secondary');
+  }
+});
+
+// File Drop Handling
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = 'var(--color-primary)';
+  dropZone.style.backgroundColor = '#e3f2fd';
+});
+dropZone.addEventListener('dragleave', () => {
+  dropZone.style.borderColor = 'var(--color-border)';
+  dropZone.style.backgroundColor = 'transparent';
+});
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = 'var(--color-border)';
+  dropZone.style.backgroundColor = 'transparent';
+  if (e.dataTransfer?.files.length) {
+    handleFileUpload(e.dataTransfer.files[0]);
+  }
+});
+fileInput.addEventListener('change', (e) => {
+  if (fileInput.files?.length) {
+    handleFileUpload(fileInput.files[0]);
+  }
+});
+
+async function handleFileUpload(file: File) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target?.result as ArrayBuffer);
+    const workbook = XLSX.read(data, { type: 'array' });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(firstSheet) as any[];
+
+    processBulkData(jsonData, true); // Append mode
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+interface BulkMember {
+  id: string; // Unique ID for removal
+  name: string;
+  birthDate: { year: number; month: number; day: number };
+  gender: string;
+  mbti: MBTIType | null;
+  fortune: FortuneResult;
+  fourPillars: FourPillarsResult;
+}
+
+let bulkMembers: BulkMember[] = [];
+
+// Tab Switching
+(window as any).switchTab = (tabId: string) => {
+  document.querySelectorAll('.tab-content').forEach(el => (el as HTMLElement).style.display = 'none');
+  document.getElementById(`tab-${tabId}`)!.style.display = 'block';
+
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => {
+    if (el.getAttribute('onclick')?.includes(tabId)) {
+      el.classList.add('active');
+      (el as HTMLElement).style.borderBottom = '2px solid var(--color-primary)';
+      (el as HTMLElement).style.fontWeight = 'bold';
+      (el as HTMLElement).style.color = 'var(--color-text-primary)';
+    } else {
+      (el as HTMLElement).style.borderBottom = 'none';
+      (el as HTMLElement).style.fontWeight = 'normal';
+      (el as HTMLElement).style.color = 'var(--color-text-muted)';
+    }
+  });
+};
+
+// Add Member from Manual Form
+(window as any).addMemberFromForm = () => {
+  const nameInput = document.getElementById('manual-name') as HTMLInputElement;
+  const yearInput = document.getElementById('manual-year') as HTMLInputElement;
+  const monthInput = document.getElementById('manual-month') as HTMLInputElement;
+  const dayInput = document.getElementById('manual-day') as HTMLInputElement;
+  const genderSelect = document.getElementById('manual-gender') as HTMLSelectElement;
+  const mbtiSelect = document.getElementById('manual-mbti') as HTMLSelectElement;
+
+  const name = nameInput.value.trim();
+  const year = parseInt(yearInput.value);
+  const month = parseInt(monthInput.value);
+  const day = parseInt(dayInput.value);
+  const gender = genderSelect.value;
+  const mbti = mbtiSelect.value as MBTIType || null;
+
+  if (!name || !year || !month || !day) {
+    alert('氏名と生年月日は必須です');
+    return;
+  }
+
+  addMember({
+    name,
+    birthDate: { year, month, day },
+    gender,
+    mbti
+  });
+
+  // Clear inputs
+  nameInput.value = '';
+  yearInput.value = '';
+  monthInput.value = '';
+  dayInput.value = '';
+  mbtiSelect.value = '';
+};
+
+// Add Member from YUI Code
+(window as any).addMemberFromYuiCode = () => {
+  const nameInput = document.getElementById('yui-name') as HTMLInputElement;
+  const codeInput = document.getElementById('yui-code-input') as HTMLInputElement;
+
+  const name = nameInput.value.trim();
+  const code = codeInput.value.trim();
+
+  if (!name || !code) {
+    alert('氏名とYUIコードを入力してください');
+    return;
+  }
+
+  const data = parseYUICode(code);
+  if (!data) {
+    alert('無効なYUIコードです');
+    return;
+  }
+
+  addMember({
+    name,
+    birthDate: data.birthDate,
+    gender: data.gender,
+    mbti: data.mbti
+  });
+
+  nameInput.value = '';
+  codeInput.value = '';
+};
+
+function addMember(data: { name: string, birthDate: { year: number, month: number, day: number }, gender: string, mbti: MBTIType | null }) {
+  const fortune = calculateFortune(data.birthDate.year, data.birthDate.month, data.birthDate.day);
+  const fourPillars = calculateFourPillars(data.birthDate.year, data.birthDate.month, data.birthDate.day);
+
+  bulkMembers.push({
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    ...data,
+    fortune,
+    fourPillars
+  });
+
+  renderMemberList();
+  renderBulkResult();
+}
+
+(window as any).removeMember = (id: string) => {
+  bulkMembers = bulkMembers.filter(m => m.id !== id);
+  renderMemberList();
+  renderBulkResult();
+};
+
+(window as any).clearMembers = () => {
+  if (confirm('すべてのメンバーを削除しますか？')) {
+    bulkMembers = [];
+    renderMemberList();
+    renderBulkResult();
+  }
+};
+
+function renderMemberList() {
+  const tbody = document.getElementById('member-list-body');
+  const countSpan = document.getElementById('member-count');
+  if (!tbody || !countSpan) return;
+
+  countSpan.textContent = bulkMembers.length.toString();
+
+  if (bulkMembers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--color-text-muted);">メンバーがいません</td></tr>';
+    document.getElementById('bulk-result')!.style.display = 'none';
+    return;
+  }
+
+  tbody.innerHTML = bulkMembers.map(m => `
+    <tr style="border-bottom: 1px solid var(--color-border);">
+      <td style="padding: 10px;">${m.name}</td>
+      <td style="padding: 10px;">${m.birthDate.year}/${m.birthDate.month}/${m.birthDate.day}</td>
+      <td style="padding: 10px;">${m.gender === 'male' ? '男性' : '女性'}</td>
+      <td style="padding: 10px;">${m.mbti || '-'}</td>
+      <td style="padding: 10px; text-align: center;">
+        <button onclick="removeMember('${m.id}')" style="background: none; border: none; color: var(--color-error); cursor: pointer;">
+          <span class="material-symbols-outlined">delete</span>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+(window as any).downloadMembersExcel = () => {
+  if (bulkMembers.length === 0) {
+    alert('データがありません');
+    return;
+  }
+
+  const data = bulkMembers.map(m => ({
+    '氏名': m.name,
+    '生年': m.birthDate.year,
+    '生月': m.birthDate.month,
+    '生日': m.birthDate.day,
+    '性別': m.gender === 'male' ? '男性' : '女性',
+    'MBTI': m.mbti || ''
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Members");
+  XLSX.writeFile(wb, "yui_members.xlsx");
+};
+
+function processBulkData(data: any[], append: boolean = false) {
+  if (!append) bulkMembers = [];
+
+  let addedCount = 0;
+  data.forEach(row => {
+    // カラム名の揺らぎを吸収（日本語・英語対応）
+    const name = row['氏名'] || row['Name'] || 'Unknown';
+    const year = row['生年'] || row['Year'];
+    const month = row['生月'] || row['Month'];
+    const day = row['生日'] || row['Day'];
+    const genderStr = row['性別'] || row['Gender'];
+    const mbtiStr = row['MBTI'] || row['Type'];
+
+    if (year && month && day && genderStr) {
+      const gender = (genderStr === '男性' || genderStr === 'Male' || genderStr === 'M') ? 'male' : 'female';
+      const birthDate = { year: parseInt(year), month: parseInt(month), day: parseInt(day) };
+
+      // 四柱推命計算
+      const fortune = calculateFortune(birthDate.year, birthDate.month, birthDate.day);
+      const fourPillars = calculateFourPillars(birthDate.year, birthDate.month, birthDate.day);
+
+      // MBTI (指定がなければ仮で計算結果を入れるか、nullにする)
+      let mbti: MBTIType | null = null;
+      if (mbtiStr && MBTI_TYPES[mbtiStr as MBTIType]) {
+        mbti = mbtiStr as MBTIType;
+      }
+
+      bulkMembers.push({
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        name,
+        birthDate,
+        gender,
+        mbti,
+        fortune,
+        fourPillars
+      });
+      addedCount++;
+    }
+  });
+
+  if (addedCount === 0 && !append) {
+    alert('有効なデータが見つかりませんでした。Excelの列名を確認してください（氏名, 生年, 生月, 生日, 性別）。');
+    return;
+  }
+
+  renderMemberList();
+  renderBulkResult();
+}
+
+/**
+ * 一括分析結果の表示
+ */
+function renderBulkResult() {
+  bulkAnalysisSection.style.display = 'block';
+  bulkResult.style.display = 'block';
+
+  // 1. チーム統計の計算
+  const roleCounts: Record<string, number> = {
+    'Leader': 0,
+    'Innovator': 0,
+    'Executor': 0,
+    'Coordinator': 0,
+    'Strategist': 0
+  };
+
+  bulkMembers.forEach(member => {
+    // 役割判定
+    const roles = calculateTeamRoles(member.mbti, member.fourPillars);
+    roleCounts[roles.primary]++;
+  });
+
+  // 2. チームマップ（円グラフ）の描画
+  const ctx = document.getElementById('team-map-chart') as HTMLCanvasElement;
+  if (ctx) {
+    // 既存のチャートがあれば破棄
+    const existingChart = (window as any).Chart.getChart(ctx);
+    if (existingChart) existingChart.destroy();
+
+    new (window as any).Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Leader (統率)', 'Innovator (革新)', 'Executor (実行)', 'Coordinator (調整)', 'Strategist (戦略)'],
+        datasets: [{
+          data: [
+            roleCounts['Leader'],
+            roleCounts['Innovator'],
+            roleCounts['Executor'],
+            roleCounts['Coordinator'],
+            roleCounts['Strategist']
+          ],
+          backgroundColor: [
+            'rgba(244, 67, 54, 0.7)',  // Red (Leader)
+            'rgba(255, 193, 7, 0.7)',  // Amber (Innovator)
+            'rgba(76, 175, 80, 0.7)',  // Green (Executor)
+            'rgba(33, 150, 243, 0.7)', // Blue (Coordinator)
+            'rgba(156, 39, 176, 0.7)'  // Purple (Strategist)
+          ],
+          borderColor: [
+            'rgba(244, 67, 54, 1)',
+            'rgba(255, 193, 7, 1)',
+            'rgba(76, 175, 80, 1)',
+            'rgba(33, 150, 243, 1)',
+            'rgba(156, 39, 176, 1)'
+          ],
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'bottom',
+          },
+          title: {
+            display: true,
+            text: 'チームの役割バランス (MBTI × 四柱推命)'
+          }
+        }
+      }
+    });
+  }
+
+  // 3. チームサマリーの生成
+  const total = bulkMembers.length;
+  const maxRole = Object.entries(roleCounts).reduce((a, b) => a[1] > b[1] ? a : b)[0];
+  let summaryText = `分析対象: ${total}名。<br>`;
+
+  switch (maxRole) {
+    case 'Leader':
+      summaryText += '<strong>リーダーシップ</strong>を発揮するメンバーが多く、目標達成に向けた推進力が高いチームです。';
+      break;
+    case 'Innovator':
+      summaryText += '<strong>創造性とアイデア</strong>に富んだメンバーが多く、新規事業や改革が得意なチームです。';
+      break;
+    case 'Executor':
+      summaryText += '<strong>実務能力と責任感</strong>が強いメンバーが多く、着実な成果を上げるのが得意なチームです。';
+      break;
+    case 'Coordinator':
+      summaryText += '<strong>協調性とサポート力</strong>が高いメンバーが多く、円滑なコミュニケーションと安定した運営が得意なチームです。';
+      break;
+    case 'Strategist':
+      summaryText += '<strong>長期的視点と分析力</strong>を持つメンバーが多く、複雑な課題解決や計画立案が得意なチームです。';
+      break;
+  }
+
+  const summaryEl = document.getElementById('team-summary-text');
+  if (summaryEl) summaryEl.innerHTML = summaryText;
+
+  // 4. リスクヒートマップの生成
+  const heatmapEl = document.getElementById('risk-heatmap');
+  if (heatmapEl) {
+    heatmapEl.innerHTML = '';
+    heatmapEl.style.display = 'grid';
+    heatmapEl.style.gridTemplateColumns = 'repeat(auto-fill, minmax(250px, 1fr))';
+    heatmapEl.style.gap = '15px';
+
+    bulkMembers.forEach(member => {
+      // リスク分析実行
+      const risk = analyzeRisk(member.mbti, member.fourPillars);
+
+      let bgColor = '#e8f5e9'; // Green (Low)
+      let borderColor = '#2e7d32';
+      let textColor = '#1b5e20';
+
+      if (risk.level === 4) {
+        bgColor = '#ffebee'; // Red (Critical)
+        borderColor = '#c62828';
+        textColor = '#b71c1c';
+      } else if (risk.level === 3) {
+        bgColor = '#fff3e0'; // Orange (High)
+        borderColor = '#ef6c00';
+        textColor = '#e65100';
+      } else if (risk.level === 2) {
+        bgColor = '#fffde7'; // Yellow (Medium)
+        borderColor = '#fbc02d';
+        textColor = '#f57f17';
+      }
+
+      const item = document.createElement('div');
+      item.style.backgroundColor = bgColor;
+      item.style.border = `1px solid ${borderColor}`;
+      item.style.borderLeft = `5px solid ${borderColor}`;
+      item.style.padding = '12px';
+      item.style.borderRadius = '4px';
+      item.style.fontSize = '0.9rem';
+      item.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+
+      item.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <strong style="font-size: 1rem;">${member.name}</strong>
+          <span style="background: rgba(255,255,255,0.5); padding: 2px 6px; borderRadius: 4px; font-size: 0.8rem;">${member.mbti || '-'}</span>
+        </div>
+        <div style="color: ${textColor}; font-weight: bold; margin-bottom: 4px;">
+          ${risk.type !== 'NONE' ? `<span class="material-symbols-outlined" style="vertical-align: bottom; font-size: 1.1rem;">warning</span> ` : ''}
+          ${risk.title}
+        </div>
+        <div style="font-size: 0.85rem; color: #555; margin-bottom: 8px; line-height: 1.4;">
+          ${risk.reason}
+        </div>
+        ${risk.actionItem ? `
+        <div style="background: rgba(255,255,255,0.6); padding: 6px; border-radius: 4px; font-size: 0.8rem; color: #333;">
+          <span style="font-weight: bold;">💡 Action:</span> ${risk.actionItem}
+        </div>
+        ` : ''}
+      `;
+      heatmapEl.appendChild(item);
+    });
+  }
+
+  // 5. シナジー分析用ドロップダウンの更新
+  updateSynergyDropdowns();
+}
+
+// シナジー分析用ドロップダウンの更新
+function updateSynergyDropdowns() {
+  const selectA = document.getElementById('synergy-member-a') as HTMLSelectElement;
+  const selectB = document.getElementById('synergy-member-b') as HTMLSelectElement;
+
+  if (!selectA || !selectB) return;
+
+  const options = bulkMembers.map(m => `<option value="${m.id}">${m.name} (${m.mbti || '-'})</option>`).join('');
+  const defaultOption = '<option value="">選択してください</option>';
+
+  // 現在の選択値を保持
+  const currentA = selectA.value;
+  const currentB = selectB.value;
+
+  selectA.innerHTML = defaultOption + options;
+  selectB.innerHTML = defaultOption + options;
+
+  if (currentA) selectA.value = currentA;
+  if (currentB) selectB.value = currentB;
+}
+
+// シナジー分析実行ボタン
+document.getElementById('analyze-synergy-btn')?.addEventListener('click', () => {
+  const selectA = document.getElementById('synergy-member-a') as HTMLSelectElement;
+  const selectB = document.getElementById('synergy-member-b') as HTMLSelectElement;
+  const resultDiv = document.getElementById('synergy-result') as HTMLDivElement;
+
+  const idA = selectA.value;
+  const idB = selectB.value;
+
+  if (!idA || !idB) {
+    alert('2名のメンバーを選択してください');
+    return;
+  }
+
+  if (idA === idB) {
+    alert('異なるメンバーを選択してください');
+    return;
+  }
+
+  const memberA = bulkMembers.find(m => m.id === idA);
+  const memberB = bulkMembers.find(m => m.id === idB);
+
+  if (!memberA || !memberB) return;
+
+  const synergy = analyzeSynergy(memberA, memberB);
+
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--color-border); padding-bottom: 10px;">
+      <h4 style="margin: 0; font-size: 1.2rem;">相性スコア: <span style="font-size: 1.5rem; color: var(--color-primary);">${synergy.score}</span> / 100</h4>
+      <span style="background: ${synergy.score >= 80 ? '#e8f5e9' : synergy.score >= 60 ? '#fff3e0' : '#ffebee'}; color: ${synergy.score >= 80 ? '#2e7d32' : synergy.score >= 60 ? '#ef6c00' : '#c62828'}; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9rem;">
+        ${synergy.score >= 80 ? '最高' : synergy.score >= 60 ? '良好' : '要注意'}
+      </span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+      <div>
+        <h5 style="color: var(--color-accent-tertiary); margin-bottom: 10px;">✨ ポジティブなシナジー</h5>
+        <ul style="padding-left: 20px; margin: 0; font-size: 0.95rem; color: var(--color-text-primary);">
+          ${synergy.synergyPoints.map(p => `<li style="margin-bottom: 5px;">${p}</li>`).join('')}
+        </ul>
+      </div>
+      
+      <div>
+        <h5 style="color: #c62828; margin-bottom: 10px;">⚠️ 予測される衝突リスク</h5>
+        ${synergy.riskScenarios.length > 0 ?
+      synergy.riskScenarios.map(r => `
+            <div style="background: #fff; padding: 10px; border-radius: 4px; border-left: 4px solid ${r.severity === 'HIGH' ? '#c62828' : r.severity === 'MEDIUM' ? '#ef6c00' : '#fbc02d'}; margin-bottom: 10px; font-size: 0.9rem;">
+              <strong style="display: block; margin-bottom: 4px;">${r.title}</strong>
+              ${r.scenario}
+            </div>
+          `).join('')
+      : '<p style="font-size: 0.9rem; color: var(--color-text-muted);">顕著な衝突リスクは見当たりません。</p>'}
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; background: #e3f2fd; padding: 15px; border-radius: 6px;">
+      <h5 style="color: #1565c0; margin-bottom: 8px;">💡 管理者へのアドバイス</h5>
+      <p style="margin-bottom: 8px; font-size: 0.95rem;"><strong>配置:</strong> ${synergy.managementAdvice.pairing}</p>
+      <p style="margin: 0; font-size: 0.95rem;"><strong>役割:</strong> ${synergy.managementAdvice.roles}</p>
+    </div>
+  `;
+});
+
 
 // MBTI診断の回答を保存
 let mbtiAnswers: number[] = [];
@@ -35,30 +578,58 @@ const totalSteps = 3;
 
 // ステップナビゲーション
 function goToStep(step: number) {
+  console.log(`goToStep called: ${step}, current: ${currentStep}`);
   // バリデーション
   if (step > currentStep) {
     if (!validateCurrentStep()) {
+      console.log('Validation failed');
       return;
     }
   }
-  
+
   // ステップの切り替え
-  const currentStepEl = document.querySelector(`.form-step.active`);
+  const currentStepEl = document.getElementById(`step-${currentStep}`);
   const nextStepEl = document.getElementById(`step-${step}`);
-  
+
   if (currentStepEl && nextStepEl) {
-    currentStepEl.classList.remove('active');
+    console.log(`Switching from step-${currentStep} to step-${step}`);
+    // クラス操作の前に、全てのステップからactiveを削除する安全策
+    document.querySelectorAll('.form-step').forEach(el => el.classList.remove('active'));
+
     nextStepEl.classList.add('active');
-    
+
     // ステップインジケーターの更新
     updateStepIndicator(step);
-    
+
     currentStep = step;
-    
+
     // スクロールをトップに
-    document.querySelector('.form-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // document.querySelector('.form-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else {
+    console.error('Step elements not found', { currentStepEl, nextStepEl });
   }
 }
+
+// イベントリスナーの設定
+document.getElementById('btn-step1-next')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  goToStep(2);
+});
+
+document.getElementById('btn-step2-back')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  goToStep(1);
+});
+
+document.getElementById('btn-step2-next')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  goToStep(3);
+});
+
+document.getElementById('btn-step3-back')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  goToStep(2);
+});
 
 // ステップインジケーターの更新
 function updateStepIndicator(activeStep: number) {
@@ -66,7 +637,7 @@ function updateStepIndicator(activeStep: number) {
   stepItems.forEach((item, index) => {
     const stepNum = index + 1;
     item.classList.remove('active', 'completed');
-    
+
     if (stepNum < activeStep) {
       item.classList.add('completed');
     } else if (stepNum === activeStep) {
@@ -83,41 +654,41 @@ function validateCurrentStep(): boolean {
     const month = parseInt(monthInput.value, 10);
     const day = parseInt(dayInput.value, 10);
     const gender = genderSelect.value;
-    
+
     let isValid = true;
-    
+
     // 年
     if (!year || year < 1900 || year > 2100) {
-      showFieldError('year-error', '1900年から2100年の間で入力してください');
+      showFieldError('year-error', '1900-2100の範囲で入力');
       isValid = false;
     } else {
       clearFieldError('year-error');
     }
-    
+
     // 月
     if (!month || month < 1 || month > 12) {
-      showFieldError('month-error', '1月から12月の間で入力してください');
+      showFieldError('month-error', '1-12の範囲で入力');
       isValid = false;
     } else {
       clearFieldError('month-error');
     }
-    
+
     // 日
     if (!day || day < 1 || day > 31) {
-      showFieldError('day-error', '1日から31日の間で入力してください');
+      showFieldError('day-error', '1-31の範囲で入力');
       isValid = false;
     } else {
       clearFieldError('day-error');
     }
-    
+
     // 日付の妥当性チェック
     if (year && month && day) {
       if (!validateDate(year, month, day)) {
-        showFieldError('day-error', '正しい日付を入力してください');
+        showFieldError('day-error', '無効な日付です');
         isValid = false;
       }
     }
-    
+
     // 性別
     if (!gender) {
       showFieldError('gender-error', '性別を選択してください');
@@ -125,14 +696,16 @@ function validateCurrentStep(): boolean {
     } else {
       clearFieldError('gender-error');
     }
-    
+
     return isValid;
   } else if (currentStep === 2) {
     // ステップ2: MBTIタイプ
     const mbtiMode = (document.querySelector('input[name="mbti-mode"]:checked') as HTMLInputElement)?.value;
-    
+    console.log(`Validating Step 2. Mode: ${mbtiMode}`);
+
     if (mbtiMode === 'known') {
       const mbtiType = mbtiTypeSelect.value;
+      console.log(`Selected MBTI Type: ${mbtiType}`);
       if (!mbtiType) {
         showFieldError('mbti-type-error', 'MBTIタイプを選択してください');
         return false;
@@ -149,10 +722,10 @@ function validateCurrentStep(): boolean {
         }
       }
     }
-    
+
     return true;
   }
-  
+
   return true;
 }
 
@@ -180,7 +753,7 @@ function clearFieldError(fieldId: string) {
 yearInput?.addEventListener('blur', () => {
   const year = parseInt(yearInput.value, 10);
   if (year && (year < 1900 || year > 2100)) {
-    showFieldError('year-error', '1900年から2100年の間で入力してください');
+    showFieldError('year-error', '1900-2100の範囲で入力');
   } else {
     clearFieldError('year-error');
   }
@@ -189,7 +762,7 @@ yearInput?.addEventListener('blur', () => {
 monthInput?.addEventListener('blur', () => {
   const month = parseInt(monthInput.value, 10);
   if (month && (month < 1 || month > 12)) {
-    showFieldError('month-error', '1月から12月の間で入力してください');
+    showFieldError('month-error', '1-12の範囲で入力');
   } else {
     clearFieldError('month-error');
   }
@@ -198,17 +771,17 @@ monthInput?.addEventListener('blur', () => {
 dayInput?.addEventListener('blur', () => {
   const day = parseInt(dayInput.value, 10);
   if (day && (day < 1 || day > 31)) {
-    showFieldError('day-error', '1日から31日の間で入力してください');
+    showFieldError('day-error', '1-31の範囲で入力');
   } else {
     clearFieldError('day-error');
   }
-  
+
   // 日付の妥当性チェック
   const year = parseInt(yearInput.value, 10);
   const month = parseInt(monthInput.value, 10);
   if (year && month && day) {
     if (!validateDate(year, month, day)) {
-      showFieldError('day-error', '正しい日付を入力してください');
+      showFieldError('day-error', '無効な日付です');
     }
   }
 });
@@ -245,20 +818,21 @@ mbtiModeRadios.forEach(radio => {
 function renderMBTIQuestions() {
   mbtiQuestionsDiv.innerHTML = '';
   mbtiAnswers = [];
-  
+
   MBTI_QUESTIONS.forEach((question, index) => {
     const questionDiv = document.createElement('div');
     questionDiv.className = 'mbti-question';
+    questionDiv.style.marginBottom = 'var(--spacing-md)';
     questionDiv.innerHTML = `
-      <h4 class="character-4-bold-pro text-primary">質問 ${index + 1}: ${question.question}</h4>
-      <div class="mbti-options">
-        <label class="character-3-regular-pro text-high cursor-pointer">
+      <h4 style="color: var(--color-accent-tertiary); margin-bottom: var(--spacing-sm);">Q${index + 1}: ${question.question}</h4>
+      <div class="radio-group">
+        <label>
           <input type="radio" name="mbti-q${index}" value="0" required>
-          ${question.optionA.text}
+          <span>${question.optionA.text}</span>
         </label>
-        <label class="character-3-regular-pro text-high cursor-pointer">
+        <label>
           <input type="radio" name="mbti-q${index}" value="1" required>
-          ${question.optionB.text}
+          <span>${question.optionB.text}</span>
         </label>
       </div>
     `;
@@ -269,13 +843,13 @@ function renderMBTIQuestions() {
 // フォーム送信処理
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  
+
   // ステップ3にいることを確認
   if (currentStep !== 3) {
     goToStep(3);
     return;
   }
-  
+
   // すべてのステップのバリデーション
   if (!validateCurrentStep()) {
     // ステップ2のバリデーション
@@ -287,14 +861,14 @@ form.addEventListener('submit', async (e) => {
     goToStep(3);
     return;
   }
-  
+
   const year = parseInt(yearInput.value, 10);
   const month = parseInt(monthInput.value, 10);
   const day = parseInt(dayInput.value, 10);
   const hourStr = hourInput.value;
   const gender = genderSelect.value;
   const purpose = (document.querySelector('input[name="purpose"]:checked') as HTMLInputElement)?.value || 'personal';
-  
+
   // 最終バリデーション
   if (!validateDate(year, month, day)) {
     goToStep(1);
@@ -305,7 +879,7 @@ form.addEventListener('submit', async (e) => {
   // MBTIタイプの取得
   let mbtiType: MBTIType | null = null;
   const mbtiMode = (document.querySelector('input[name="mbti-mode"]:checked') as HTMLInputElement)?.value;
-  
+
   if (mbtiMode === 'known') {
     mbtiType = mbtiTypeSelect.value as MBTIType || null;
     if (!mbtiType) {
@@ -336,7 +910,7 @@ form.addEventListener('submit', async (e) => {
 
   // エラーを非表示
   hideError();
-  
+
   // ローディング表示
   showLoading();
   hideResult();
@@ -346,21 +920,21 @@ form.addEventListener('submit', async (e) => {
     try {
       const hour = hourStr ? parseInt(hourStr.split(':')[0], 10) : undefined;
       const result = calculateAllFortune(year, month, day, hour, gender, mbtiType);
-      
+
       if (purpose === 'personal') {
         displayPersonalResult(result);
       } else {
         displayEmployerResult(result);
       }
-      
+
       hideLoading();
       showResult();
     } catch (error) {
-      showError('分析の計算中にエラーが発生しました。');
+      showError('分析処理中にエラーが発生しました。');
       hideLoading();
       console.error(error);
     }
-  }, 1000);
+  }, 1500); // 少し演出時間を長くする
 });
 
 /**
@@ -377,7 +951,7 @@ function calculateAllFortune(
   const numerology = calculateFortune(year, month, day);
   const fourPillars = calculateFourPillars(year, month, day, hour);
   const mbti = MBTI_TYPES[mbtiType];
-  
+
   return {
     numerology,
     fourPillars,
@@ -394,33 +968,26 @@ function validateDate(year: number, month: number, day: number): boolean {
   if (year < 1900 || year > 2100) return false;
   if (month < 1 || month > 12) return false;
   if (day < 1 || day > 31) return false;
-  
+
   const date = new Date(year, month - 1, day);
-  return date.getFullYear() === year && 
-         date.getMonth() === month - 1 && 
-         date.getDate() === day;
+  return date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day;
 }
 
 /**
- * エラー表示（改善版：具体的で行動可能なメッセージ）
+ * エラー表示
  */
 function showError(message: string) {
   errorDiv.innerHTML = `
-    <div style="display: flex; align-items: start; gap: var(--spacing-3);">
-      <span class="icon-4-fill-1 material-symbols-outlined" style="color: var(--color-negative-600);">error</span>
-      <div>
-        <strong class="character-3-bold-pro">エラーが発生しました</strong>
-        <p class="character-3-regular-pro" style="margin-top: var(--spacing-1);">${message}</p>
-        <p class="character-2-regular-pro text-middle" style="margin-top: var(--spacing-2);">
-          💡 ヒント: 入力内容を確認し、必須項目（<span class="text-negative">*</span>）がすべて入力されているか確認してください。
-        </p>
-      </div>
+    <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
+      <span class="material-symbols-outlined">error</span>
+      <span>${message}</span>
     </div>
   `;
   errorDiv.classList.add('show');
   errorDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  
-  // 5秒後に自動で非表示（オプション）
+
   setTimeout(() => {
     if (errorDiv.classList.contains('show')) {
       hideError();
@@ -437,10 +1004,12 @@ function hideError() {
  */
 function showLoading() {
   loadingDiv.classList.add('show');
+  form.style.display = 'none';
 }
 
 function hideLoading() {
   loadingDiv.classList.remove('show');
+  form.style.display = 'block';
 }
 
 /**
@@ -463,207 +1032,127 @@ function displayPersonalResult(result: CompleteFortuneResult) {
   const talent = TALENT_NUMBER_TRAITS[numerology.talentNumber];
   const essence = ESSENCE_NUMBER_TRAITS[numerology.essenceNumber];
   const inquiry = INQUIRY_NUMBER_TRAITS[numerology.inquiryNumber];
-  
+
   // レーダーチャート用のデータ
   const radarData = calculateRadarData(numerology, mbti);
-  
-  // 目次（TOC）を生成
-  const tocItems = [
-    { id: 'career-traits', label: 'キャリア特性', icon: 'person' },
-    { id: 'radar-chart', label: '特性レーダーチャート', icon: 'bar_chart' },
-    { id: 'four-pillars', label: '四柱推命の詳細', icon: 'psychology' },
-    { id: 'personality', label: '具体的な性格特性', icon: 'star' },
-    { id: 'career-flow', label: 'キャリアの流れ', icon: 'trending_up' },
-    { id: 'career', label: '適職とキャリア', icon: 'work' },
-    { id: 'compatibility', label: '人間関係相性表', icon: 'favorite' },
-    { id: 'optimization', label: 'キャリア最適化のポイント', icon: 'lightbulb' },
-    { id: 'advice', label: '具体的な行動アドバイス', icon: 'tips_and_updates' },
-    { id: 'message', label: '総合メッセージ', icon: 'target' }
-  ];
-  
+
   const html = `
     <div class="result-header">
-      <h2 class="character-6-bold-pro text-primary">あなたのキャリア分析結果</h2>
-      <p class="character-3-regular-pro text-middle">${birthDate.year}年${birthDate.month}月${birthDate.day}日生まれ</p>
-      
-      <!-- 目次（TOC） -->
-      <nav class="result-toc">
-        <h3 class="character-4-bold-pro text-primary toc-title">
-          <span class="icon-4-fill-1 material-symbols-outlined">menu</span>
-          目次
-        </h3>
-        <ul class="toc-list">
-          ${tocItems.map(item => `
-            <li class="toc-item">
-              <a href="#${item.id}" class="toc-link character-3-regular-pro text-high">
-                <span class="icon-3-fill-0 material-symbols-outlined">${item.icon}</span>
-                <span class="toc-label">${item.label}</span>
-              </a>
-            </li>
-          `).join('')}
-        </ul>
-      </nav>
+      <h2>人材特性分析レポート (YUI - 結 -)</h2>
+      <p>生年月日: ${birthDate.year}年${birthDate.month}月${birthDate.day}日</p>
     </div>
     
-    <div class="result-content">
-      <h3 id="career-traits" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">person</span>
-        キャリア特性
-      </h3>
-      <p class="character-3-regular-pro text-high">
-        <strong class="character-3-bold-pro">${mbti.name}</strong>（${mbti.type}）として、<br>
-        <span class="badge badge-primary character-2-regular-pro">才能数${numerology.talentNumber}</span>
-        <span class="badge badge-primary character-2-regular-pro">本質数${numerology.essenceNumber}</span>
-        <span class="badge badge-primary character-2-regular-pro">探究数${numerology.inquiryNumber}</span>
-        の特性を持つあなたは、${essence?.theme || ''}という人生のテーマを持っています。
+    <div class="card">
+      <h3><span class="material-symbols-outlined">person</span> キャリア特性</h3>
+      <p>
+        あなたは<strong style="color: var(--color-accent-primary);">${mbti.name} (${mbti.type})</strong>としての資質を持ち、
+        人生のテーマは「${essence?.theme || ''}」です。
       </p>
-      
-      <h3 id="radar-chart" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">bar_chart</span>
-        特性レーダーチャート
-      </h3>
+      <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap; margin-top: var(--spacing-md);">
+        <span style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-accent); color: var(--color-primary);">才能数: ${numerology.talentNumber}</span>
+        <span style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-accent); color: var(--color-primary);">本質数: ${numerology.essenceNumber}</span>
+        <span style="background: #e3f2fd; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--color-accent); color: var(--color-primary);">探究数: ${numerology.inquiryNumber}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="material-symbols-outlined">bar_chart</span> 特性レーダーチャート</h3>
       <div class="chart-container">
         <canvas id="radar-chart-canvas"></canvas>
       </div>
-      
-      <h3 id="four-pillars" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">psychology</span>
-        四柱推命の詳細
-      </h3>
-      <div class="pillar-grid">
-        <div class="pillar-card">
-          <h4 class="character-4-bold-pro text-primary">${fourPillars.yearPillar.name}</h4>
-          <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">${fourPillars.yearPillar.fullName}</strong>（${fourPillars.yearPillar.fullReading}）</p>
-          <p class="character-3-regular-pro text-middle">${fourPillars.yearPillar.description}</p>
+    </div>
+    
+    <div class="card">
+      <h3><span class="material-symbols-outlined">psychology</span> 四柱推命分析詳細</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--spacing-md);">
+        <div style="background: rgba(0,0,0,0.2); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <h4 style="color: var(--color-accent-primary);">${fourPillars.yearPillar.name}</h4>
+          <p><strong>${fourPillars.yearPillar.fullName}</strong> (${fourPillars.yearPillar.fullReading})</p>
+          <p style="font-size: 0.9rem;">${fourPillars.yearPillar.description}</p>
         </div>
-        <div class="pillar-card">
-          <h4 class="character-4-bold-pro text-primary">${fourPillars.monthPillar.name}</h4>
-          <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">${fourPillars.monthPillar.fullName}</strong>（${fourPillars.monthPillar.fullReading}）</p>
-          <p class="character-3-regular-pro text-middle">${fourPillars.monthPillar.description}</p>
+        <div style="background: rgba(0,0,0,0.2); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <h4 style="color: var(--color-accent-primary);">${fourPillars.monthPillar.name}</h4>
+          <p><strong>${fourPillars.monthPillar.fullName}</strong> (${fourPillars.monthPillar.fullReading})</p>
+          <p style="font-size: 0.9rem;">${fourPillars.monthPillar.description}</p>
         </div>
-        <div class="pillar-card">
-          <h4 class="character-4-bold-pro text-primary">${fourPillars.dayPillar.name}</h4>
-          <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">${fourPillars.dayPillar.fullName}</strong>（${fourPillars.dayPillar.fullReading}）</p>
-          <p class="character-3-regular-pro text-middle">${fourPillars.dayPillar.description}</p>
+        <div style="background: rgba(0,0,0,0.2); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <h4 style="color: var(--color-accent-primary);">${fourPillars.dayPillar.name}</h4>
+          <p><strong>${fourPillars.dayPillar.fullName}</strong> (${fourPillars.dayPillar.fullReading})</p>
+          <p style="font-size: 0.9rem;">${fourPillars.dayPillar.description}</p>
         </div>
         ${fourPillars.hourPillar ? `
-        <div class="pillar-card">
-          <h4 class="character-4-bold-pro text-primary">${fourPillars.hourPillar.name}</h4>
-          <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">${fourPillars.hourPillar.fullName}</strong>（${fourPillars.hourPillar.fullReading}）</p>
-          <p class="character-3-regular-pro text-middle">${fourPillars.hourPillar.description}</p>
+        <div style="background: rgba(0,0,0,0.2); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <h4 style="color: var(--color-accent-primary);">${fourPillars.hourPillar.name}</h4>
+          <p><strong>${fourPillars.hourPillar.fullName}</strong> (${fourPillars.hourPillar.fullReading})</p>
+          <p style="font-size: 0.9rem;">${fourPillars.hourPillar.description}</p>
         </div>
         ` : ''}
       </div>
-      
-      <h3 id="personality" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">star</span>
-        具体的な性格特性
-      </h3>
-      <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">あなたの強み：</strong></p>
-      <ul class="character-3-regular-pro text-high">
-        ${talent?.strengths.map(s => `<li>${s}</li>`).join('') || ''}
-        ${mbti.strengths.map(s => `<li>${s}</li>`).join('')}
-      </ul>
-      
-      <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">注意すべき点：</strong></p>
-      <ul class="character-3-regular-pro text-high">
-        ${talent?.weaknesses.map(w => `<li>${w}</li>`).join('') || ''}
-        ${mbti.weaknesses.map(w => `<li>${w}</li>`).join('')}
-      </ul>
-      
-      <h3 id="career-flow" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">trending_up</span>
-        キャリアの流れ
-      </h3>
-      <div class="timeline">
-        <div class="timeline-item">
-          <div class="timeline-year character-3-bold-pro text-primary">過去（20代まで）</div>
-          <div class="timeline-content character-3-regular-pro">
-            ${essence?.challenge || ''}を経験し、${talent?.basic || ''}という特性を培ってきました。
-          </div>
+    </div>
+    
+    <div class="card">
+      <h3><span class="material-symbols-outlined">star</span> 強みと弱み</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md);">
+        <div>
+          <h4 style="color: var(--color-success);">強み</h4>
+          <ul>
+            ${talent?.strengths.map(s => `<li>${s}</li>`).join('') || ''}
+            ${mbti.strengths.map(s => `<li>${s}</li>`).join('')}
+          </ul>
         </div>
-        <div class="timeline-item">
-          <div class="timeline-year character-3-bold-pro text-primary">現在（30-50代）</div>
-          <div class="timeline-content character-3-regular-pro">
-            ${essence?.theme || ''}を追求し、${mbti.workStyle}という働き方で成果を上げています。
-          </div>
-        </div>
-        <div class="timeline-item">
-          <div class="timeline-year character-3-bold-pro text-primary">未来（60代以降）</div>
-          <div class="timeline-content character-3-regular-pro">
-            ${inquiry?.theme || ''}というテーマに向かって、${inquiry?.talent || ''}を発揮します。
-          </div>
+        <div>
+          <h4 style="color: var(--color-error);">注意点</h4>
+          <ul>
+            ${talent?.weaknesses.map(w => `<li>${w}</li>`).join('') || ''}
+            ${mbti.weaknesses.map(w => `<li>${w}</li>`).join('')}
+          </ul>
         </div>
       </div>
-      
-      <h3 id="career" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">work</span>
-        適職とキャリア
-      </h3>
-      <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">あなたに適した職業：</strong></p>
-      <ul class="character-3-regular-pro text-high">
+    </div>
+
+    <div class="card">
+      <h3><span class="material-symbols-outlined">work</span> 適職とキャリア</h3>
+      <p><strong>あなたに適した職業：</strong></p>
+      <ul>
         ${essence?.work.map(w => `<li>${w}</li>`).join('') || ''}
         <li>${mbti.teamRole}</li>
       </ul>
+    </div>
+
+    <div class="card">
+      <h3><span class="material-symbols-outlined">tips_and_updates</span> キャリア開発アドバイス</h3>
+      <p>${mbti.workStyle}。${mbti.communication}というスタイルを意識しましょう。</p>
+    </div>
+
+    <div class="card" style="background: #f0f4f8; border: 1px solid var(--color-accent);">
+      <h3><span class="material-symbols-outlined">auto_awesome</span> 深層コンピテンシー分析</h3>
+      <p style="font-style: italic; margin-bottom: var(--spacing-md);">「${mbti.selfAnalysis.deepAnalysis}」</p>
       
-      <h3 id="compatibility" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">favorite</span>
-        人間関係相性表
-      </h3>
-      ${generateCompatibilityTable(mbti.type)}
+      <h4 style="color: var(--color-primary); margin-top: var(--spacing-md);">隠れた才能</h4>
+      <p>${mbti.selfAnalysis.hiddenTalent}</p>
       
-      <h3 id="optimization" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">lightbulb</span>
-        キャリア最適化のポイント
-      </h3>
-      <ul class="character-3-regular-pro text-high">
-        <li><strong class="character-3-bold-pro">推奨カラー：</strong>${getLuckyColor(numerology.essenceNumber)}</li>
-        <li><strong class="character-3-bold-pro">重要ナンバー：</strong>${numerology.talentNumber}, ${numerology.essenceNumber}, ${numerology.inquiryNumber}</li>
-        <li><strong class="character-3-bold-pro">推奨方向：</strong>${getLuckyDirection(fourPillars.yearPillar.junishi)}</li>
-        <li><strong class="character-3-bold-pro">最適な活動時間：</strong>${mbti.type.startsWith('E') ? '午前中' : '午後から夜'}</li>
-      </ul>
-      
-      <h3 id="advice" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">tips_and_updates</span>
-        具体的な行動アドバイス
-      </h3>
-      <div class="action-plan">
-        <h4 class="character-4-bold-pro text-primary">仕事の場面で</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          ${mbti.workStyle}。${mbti.communication}というコミュニケーションスタイルを意識しましょう。
-        </div>
-        
-        <h4 class="character-4-bold-pro text-primary">人間関係で</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          ${mbti.communication}。${essence?.relationship || ''}という特徴を活かして、調和のとれた関係を築きましょう。
-        </div>
-        
-        <h4 class="character-4-bold-pro text-primary">ストレス管理で</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          ${mbti.stressFactors.join('、')}に注意し、${talent?.stress || ''}という方法でリフレッシュしましょう。
-        </div>
+      <h4 style="color: var(--color-primary); margin-top: var(--spacing-md);">成長への提言</h4>
+      <p>${mbti.selfAnalysis.advice}</p>
+    </div>
+
+    <div class="share-actions" style="flex-direction: column; align-items: stretch;">
+      <div style="width: 100%; margin-bottom: var(--spacing-md); padding: var(--spacing-md); background: var(--color-bg-tertiary); border-radius: var(--radius-sm); text-align: center;">
+        <p style="font-size: 0.9rem; color: var(--color-text-muted); margin-bottom: var(--spacing-sm);">分析結果を共有</p>
+        <p style="font-weight: bold; font-size: 1.1rem;">「${mbti.selfAnalysis.friendShareComment}」</p>
       </div>
-      
-      <h3 id="message" class="character-6-bold-pro text-primary" style="scroll-margin-top: 80px;">
-        <span class="icon-4-fill-1 material-symbols-outlined">target</span>
-        総合メッセージ
-      </h3>
-      <p class="character-3-regular-pro text-high">
-        あなたの魂の青写真には、${essence?.theme || ''}というテーマが刻まれています。<br>
-        才能数${numerology.talentNumber}の${talent?.name || ''}の力と、<br>
-        本質数${numerology.essenceNumber}の${essence?.name || ''}の資質、<br>
-        MBTIタイプ${mbti.type}の${mbti.name}としての特性が、<br>
-        あなたの人生の波動を形作っています。
-      </p>
-      <p class="character-3-regular-pro text-high">
-        キャリアの道を切り開くのはあなた自身です。<br>
-        あなたの才能と本質を信じて、一歩ずつ前進してください。
-      </p>
+      <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
+        <button class="btn btn-primary" onclick="copyResult()" style="width: 100%;">
+          <span class="material-symbols-outlined">content_copy</span> 結果をコピー
+        </button>
+        <button class="btn btn-share-x" onclick="shareOnX('${mbti.name}', '${essence?.theme || ''}', '${mbti.selfAnalysis.friendShareComment}')" style="width: 100%;">
+          <span class="material-symbols-outlined">share</span> Xでシェア
+        </button>
+      </div>
     </div>
   `;
-  
+
   resultSection.innerHTML = html;
-  
+
   // レーダーチャートを描画
   setTimeout(() => {
     renderRadarChart(radarData);
@@ -675,344 +1164,298 @@ function displayPersonalResult(result: CompleteFortuneResult) {
  */
 function displayEmployerResult(result: CompleteFortuneResult) {
   const { numerology, fourPillars, mbti, birthDate } = result;
-  const essence = ESSENCE_NUMBER_TRAITS[numerology.essenceNumber];
-  
+
   const html = `
     <div class="result-header">
-      <h2 class="character-6-bold-pro text-primary">人材分析レポート</h2>
-      <p class="character-3-regular-pro text-middle">${birthDate.year}年${birthDate.month}月${birthDate.day}日生まれ / ${mbti.type} - ${mbti.name}</p>
+      <h2>人材分析レポート</h2>
+      <p>${birthDate.year}年${birthDate.month}月${birthDate.day}日 / ${mbti.type} - ${mbti.name}</p>
     </div>
     
-    <div class="result-content">
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">trending_up</span>
-        成長予測曲線
-      </h3>
+    <div class="card">
+      <h3><span class="material-symbols-outlined">trending_up</span> 成長予測</h3>
       <div class="chart-container">
         <canvas id="growth-chart"></canvas>
       </div>
+    </div>
+    
+    <div class="card">
+      <h3><span class="material-symbols-outlined">groups</span> チームでの役割</h3>
+      <p><strong>推奨役割：</strong>${mbti.teamRole}</p>
+      <p><strong>働き方：</strong>${mbti.workStyle}</p>
+    </div>
+
+    <div class="card">
+      <h3><span class="material-symbols-outlined">psychology</span> マネジメントのポイント</h3>
+      <p><strong>モチベーション：</strong>${mbti.motivationFactors.join('、')}</p>
+      <p><strong>コミュニケーション：</strong>${mbti.communication}</p>
+    </div>
+
+    <div class="card" style="border-left: 4px solid var(--color-accent-secondary);">
+      <h3><span class="material-symbols-outlined">menu_book</span> 雇用主向けマニュアル</h3>
       
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">target</span>
-        この人とはこう接すればいい
-      </h3>
-      <div class="action-plan">
-        <h4 class="character-4-bold-pro text-primary">コミュニケーション指針</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          <strong class="character-3-bold-pro">話し方：</strong>${mbti.communication}<br>
-          <strong class="character-3-bold-pro">指示の出し方：</strong>${mbti.managementStyle}<br>
-          <strong class="character-3-bold-pro">フィードバック：</strong>${mbti.type.includes('F') ? '感情を考慮した温かい表現で' : '事実に基づいた論理的な説明で'}伝える
-        </div>
-        
-        <h4 class="character-4-bold-pro text-primary">モチベーション管理</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          <strong class="character-3-bold-pro">動機付け要因：</strong>${mbti.motivationFactors.join('、')}<br>
-          <strong class="character-3-bold-pro">アプローチ方法：</strong>${mbti.motivationFactors.map(f => `・${f}を提供する`).join('<br>')}
-        </div>
-      </div>
+      <h4 style="color: var(--color-accent-secondary); margin-top: var(--spacing-md);">接し方のガイド</h4>
+      <p>${mbti.employerManual.communicationGuide}</p>
       
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">groups</span>
-        チーム内での最適な役割
-      </h3>
-      <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">推奨役割：</strong>${mbti.teamRole}</p>
-      <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">働き方：</strong>${mbti.workStyle}</p>
-      <p class="character-3-regular-pro text-high"><strong class="character-3-bold-pro">配置の提案：</strong></p>
-      <ul class="character-3-regular-pro text-high">
-        ${getTeamPlacement(mbti.type).map(p => `<li>${p}</li>`).join('')}
+      <h4 style="color: var(--color-accent-secondary); margin-top: var(--spacing-md);">効果的な褒め言葉</h4>
+      <ul style="list-style: none; padding: 0;">
+        ${mbti.employerManual.praisePoints.map(p => `<li style="padding: 4px 0; padding-left: 20px; position: relative;"><span style="position: absolute; left: 0; color: var(--color-accent-secondary);">✔</span> ${p}</li>`).join('')}
       </ul>
       
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">warning</span>
-        リスク管理マトリクス
-      </h3>
-      <div class="risk-matrix">
-        <div class="risk-cell ${getRiskLevel(mbti.stressFactors.length, 'low')}">
-          <strong class="character-3-bold-pro">離職リスク</strong><br>
-          <span class="character-3-regular-pro">${getRiskLevel(mbti.stressFactors.length, 'low') === 'risk-low' ? '低' : getRiskLevel(mbti.stressFactors.length, 'low') === 'risk-medium' ? '中' : '高'}</span>
+      <h4 style="color: #c62828; margin-top: var(--spacing-md);">注意点（NG行動）</h4>
+      <p style="color: #c62828; font-weight: 600;">${mbti.employerManual.handlingCaution}</p>
+      
+      <h4 style="color: var(--color-primary); margin-top: var(--spacing-md);">効果的なマネジメント</h4>
+      <p>${mbti.employerManual.effectiveManagement}</p>
+    </div>
+
+    <!-- YUI Code & Pair Analysis Section -->
+    <div class="card" style="border: 2px solid var(--color-primary);">
+      <h3><span class="material-symbols-outlined">qr_code_2</span> YUIコード & ペア分析</h3>
+      <div style="text-align: center; margin-bottom: var(--spacing-lg);">
+        <p>あなたのYUIコード（部下に共有）</p>
+        <div style="font-family: monospace; font-size: 1.5rem; font-weight: bold; background: #e3f2fd; padding: var(--spacing-md); border-radius: var(--radius-sm); display: inline-block; margin-bottom: var(--spacing-sm);">
+          ${generateYUICode(birthDate.year, birthDate.month, birthDate.day, genderSelect.value, mbti.type)}
         </div>
-        <div class="risk-cell ${getRiskLevel(mbti.weaknesses.length, 'medium')}">
-          <strong class="character-3-bold-pro">パフォーマンスリスク</strong><br>
-          <span class="character-3-regular-pro">${getRiskLevel(mbti.weaknesses.length, 'medium') === 'risk-low' ? '低' : getRiskLevel(mbti.weaknesses.length, 'medium') === 'risk-medium' ? '中' : '高'}</span>
-        </div>
-        <div class="risk-cell ${getRiskLevel(numerology.essenceNumber === 8 ? 1 : 0, 'low')}">
-          <strong class="character-3-bold-pro">モチベーションリスク</strong><br>
-          <span class="character-3-regular-pro">${mbti.motivationFactors.length > 3 ? '低' : '中'}</span>
-        </div>
+        <p style="font-size: 0.85rem; color: var(--color-text-muted);">※このコードを1on1の相手に入力してもらうか、あなたが相手のコードを入力してください。</p>
       </div>
-      
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">notifications_active</span>
-        ストレスサインの早期発見
-      </h3>
-      <div class="action-plan">
-        <h4 class="character-4-bold-pro text-primary">注意すべきサイン</h4>
-        <ul class="character-3-regular-pro text-high">
-          ${mbti.stressFactors.map(f => `<li>${f}が続く場合、ストレスが蓄積している可能性</li>`).join('')}
-        </ul>
-        
-        <h4 class="character-4-bold-pro text-primary">対処法</h4>
-        <ul class="character-3-regular-pro text-high">
-          <li>${mbti.communication}というコミュニケーションスタイルで接する</li>
-          <li>${mbti.motivationFactors[0]}を提供する</li>
-          <li>定期的な1on1で状況を確認する</li>
-        </ul>
-      </div>
-      
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">assignment</span>
-        アクションプラン
-      </h3>
-      <div class="action-plan">
-        <h4 class="character-4-bold-pro text-primary">短期（1-3ヶ月）</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          <strong class="character-3-bold-pro">目標：</strong>${mbti.teamRole}としての役割を明確化<br>
-          <strong class="character-3-bold-pro">行動：</strong>${mbti.workStyle}という環境を整備
+
+      <div style="border-top: 1px solid var(--color-border); padding-top: var(--spacing-lg);">
+        <h4><span class="material-symbols-outlined">diversity_3</span> 部下との相性診断 (1on1支援)</h4>
+        <div class="form-group">
+          <label>部下のYUIコードを入力</label>
+          <div style="display: flex; gap: var(--spacing-sm);">
+            <input type="text" id="subordinate-code" placeholder="例: 19950401-M-INFP" style="flex: 1;">
+            <button class="btn btn-primary" onclick="analyzePair('${mbti.type}')">診断する</button>
+          </div>
         </div>
-        
-        <h4 class="character-4-bold-pro text-primary">中期（3-12ヶ月）</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          <strong class="character-3-bold-pro">目標：</strong>${mbti.strengths[0]}と${mbti.strengths[1]}を活かした成果創出<br>
-          <strong class="character-3-bold-pro">行動：</strong>${mbti.motivationFactors.join('、')}を提供
+        <div id="pair-analysis-result" style="display: none; margin-top: var(--spacing-md); background: var(--color-bg-primary); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <!-- Result injected here -->
         </div>
-        
-        <h4 class="character-4-bold-pro text-primary">長期（1-3年）</h4>
-        <div class="action-item character-3-regular-pro text-high">
-          <strong class="character-3-bold-pro">目標：</strong>${essence?.work[0] || ''}としてのキャリア構築<br>
-          <strong class="character-3-bold-pro">行動：</strong>${mbti.teamRole}としての経験を積み、リーダーシップを育成
-        </div>
-      </div>
-      
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">school</span>
-        トレーニングマトリクス
-      </h3>
-      <table class="compatibility-table">
-        <thead>
-          <tr>
-            <th class="character-3-bold-pro">スキル領域</th>
-            <th class="character-3-bold-pro">現在の強み</th>
-            <th class="character-3-bold-pro">開発が必要</th>
-            <th class="character-3-bold-pro">推奨トレーニング</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="character-3-regular-pro text-high">コミュニケーション</td>
-            <td class="character-3-regular-pro text-high">${mbti.communication}</td>
-            <td class="character-3-regular-pro text-high">${mbti.type.includes('I') ? '積極的な発言' : mbti.type.includes('E') ? '傾聴スキル' : 'バランス'}</td>
-            <td class="character-3-regular-pro text-high">${mbti.type.includes('I') ? 'プレゼンテーション研修' : '傾聴スキル研修'}</td>
-          </tr>
-          <tr>
-            <td class="character-3-regular-pro text-high">問題解決</td>
-            <td class="character-3-regular-pro text-high">${mbti.strengths[0]}</td>
-            <td class="character-3-regular-pro text-high">${mbti.weaknesses[0]}</td>
-            <td class="character-3-regular-pro text-high">${mbti.type.includes('T') ? '論理的思考研修' : '共感力向上研修'}</td>
-          </tr>
-          <tr>
-            <td class="character-3-regular-pro text-high">チームワーク</td>
-            <td class="character-3-regular-pro text-high">${mbti.teamRole}</td>
-            <td class="character-3-regular-pro text-high">${mbti.type.includes('I') ? '協調性' : '独立性'}</td>
-            <td class="character-3-regular-pro text-high">チームビルディング研修</td>
-          </tr>
-        </tbody>
-      </table>
-      
-      <h3 class="character-6-bold-pro text-primary">
-        <span class="icon-4-fill-1 material-symbols-outlined">assessment</span>
-        評価方法の提案
-      </h3>
-      <div class="action-plan">
-        <h4 class="character-4-bold-pro text-primary">評価基準</h4>
-        <ul class="character-3-regular-pro text-high">
-          <li><strong class="character-3-bold-pro">成果指標：</strong>${mbti.strengths[0]}と${mbti.strengths[1]}を活かした成果を評価</li>
-          <li><strong class="character-3-bold-pro">プロセス指標：</strong>${mbti.workStyle}という働き方ができているか</li>
-          <li><strong class="character-3-bold-pro">成長指標：</strong>${mbti.weaknesses[0]}の改善度合い</li>
-        </ul>
-        
-        <h4 class="character-4-bold-pro text-primary">フィードバック方法</h4>
-        <ul class="character-3-regular-pro text-high">
-          <li>${mbti.managementStyle}というスタイルでフィードバック</li>
-          <li>${mbti.type.includes('F') ? '感情を考慮した' : '論理的な'}説明を心がける</li>
-          <li>定期的な1on1で${mbti.motivationFactors[0]}を確認</li>
-        </ul>
       </div>
     </div>
+
+    <div class="card">
+      <h3><span class="material-symbols-outlined">warning</span> リスク管理</h3>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--spacing-md); text-align: center;">
+        <div style="background: rgba(255,255,255,0.05); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <strong>離職リスク</strong><br>
+          <span style="font-size: 1.5rem; color: ${getRiskColor(mbti.stressFactors.length, 'low')}">${getRiskLevelText(mbti.stressFactors.length, 'low')}</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <strong>パフォーマンス</strong><br>
+          <span style="font-size: 1.5rem; color: ${getRiskColor(mbti.weaknesses.length, 'medium')}">${getRiskLevelText(mbti.weaknesses.length, 'medium')}</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); padding: var(--spacing-md); border-radius: var(--radius-sm);">
+          <strong>モチベーション</strong><br>
+          <span style="font-size: 1.5rem; color: ${getRiskColor(numerology.essenceNumber === 8 ? 1 : 0, 'low')}">${mbti.motivationFactors.length > 3 ? '低' : '中'}</span>
+        </div>
+      </div>
+      <div style="margin-top: var(--spacing-md); font-size: 0.85rem; color: var(--color-text-secondary); background: rgba(0,0,0,0.2); padding: var(--spacing-sm); border-radius: var(--radius-sm);">
+        <p style="margin-bottom: 4px;"><strong>※リスク判定について</strong></p>
+        <p style="margin-bottom: 0;">この判定は、MBTIの性格特性と数秘術に基づく<strong>先天的な傾向</strong>を示しています。現在の状況や環境によって変化するものではなく、その人がストレスを感じやすいポイントや、モチベーションの源泉がどこにあるかを示唆するものです。</p>
+      </div>
+    </div>
+
+    <div class="share-actions">
+      <button class="btn btn-primary" onclick="copyResult()">
+        <span class="material-symbols-outlined">content_copy</span> 結果をコピー
+      </button>
+    </div>
   `;
-  
+
   resultSection.innerHTML = html;
-  
-  // 成長予測チャートを描画
+
+  // 成長曲線を描画
   setTimeout(() => {
-    renderGrowthChart(numerology, mbti);
+    renderGrowthChart();
   }, 100);
 }
 
-/**
- * レーダーチャート用データを計算
- */
+// シェア機能
+(window as any).copyResult = () => {
+  const text = `人材特性分析レポート\nYUI - 結 - で分析しました。\n#YUI #人材分析`;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('結果をクリップボードにコピーしました。');
+  });
+};
+
+(window as any).shareOnX = (mbtiName: string, theme: string, comment: string) => {
+  const text = `${comment}\n\n特性テーマ:「${theme}」\nタイプ:「${mbtiName}」\n\nYUI - 結 - で分析\n#YUI #人材分析`;
+  const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
+};
+
+// ユーティリティ関数（既存のロジックを維持）
 function calculateRadarData(numerology: any, mbti: any) {
+  // 簡易的なデータ生成（実際はもっと複雑なロジックでも良い）
   return {
-    labels: ['リーダーシップ', '創造性', '協調性', '分析力', '実行力', 'コミュニケーション'],
+    labels: ['直感力', '分析力', '行動力', '協調性', '創造性'],
     datasets: [{
       label: 'あなたの特性',
       data: [
-        numerology.essenceNumber === 1 || numerology.essenceNumber === 8 ? 8 : 5,
-        numerology.talentNumber === 3 || numerology.talentNumber === 9 ? 9 : 5,
-        numerology.talentNumber === 2 || numerology.talentNumber === 6 ? 8 : 5,
-        numerology.essenceNumber === 7 ? 9 : 5,
-        numerology.essenceNumber === 4 || numerology.essenceNumber === 8 ? 8 : 5,
-        mbti.type.includes('E') ? 8 : 5
+        (numerology.talentNumber % 5) + 5,
+        (numerology.essenceNumber % 5) + 5,
+        (numerology.inquiryNumber % 5) + 5,
+        mbti.type.includes('F') ? 9 : 4,
+        mbti.type.includes('N') ? 9 : 5
       ],
-      backgroundColor: 'rgba(102, 126, 234, 0.2)',
-      borderColor: 'rgba(102, 126, 234, 1)',
-      borderWidth: 2
+      backgroundColor: 'rgba(2, 136, 209, 0.2)',
+      borderColor: 'rgba(2, 136, 209, 1)',
+      borderWidth: 2,
+      pointBackgroundColor: '#fff'
     }]
   };
 }
 
-/**
- * レーダーチャートを描画
- */
-function renderRadarChart(data: ReturnType<typeof calculateRadarData>) {
-  const canvas = document.getElementById('radar-chart-canvas') as HTMLCanvasElement;
-  if (!canvas) {
-    console.error('Radar chart canvas not found');
-    return;
-  }
+function renderRadarChart(data: any) {
+  const ctx = document.getElementById('radar-chart-canvas') as HTMLCanvasElement;
+  if (!ctx) return;
 
-  new (window as any).Chart(canvas, {
+  new (window as any).Chart(ctx, {
     type: 'radar',
     data: data,
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
       scales: {
         r: {
-          beginAtZero: true,
-          max: 10
+          angleLines: { color: 'rgba(0, 0, 0, 0.1)' },
+          grid: { color: 'rgba(0, 0, 0, 0.1)' },
+          pointLabels: { color: '#333', font: { size: 12 } },
+          ticks: { display: false, max: 10 }
         }
+      },
+      plugins: {
+        legend: { display: false }
       }
     }
   });
 }
 
-/**
- * 成長予測チャートを描画
- */
-function renderGrowthChart(numerology: any, mbti: any) {
-  const canvas = document.getElementById('growth-chart') as HTMLCanvasElement;
-  if (!canvas) return;
-  
-  new (window as any).Chart(canvas, {
+function renderGrowthChart() {
+  const ctx = document.getElementById('growth-chart') as HTMLCanvasElement;
+  if (!ctx) return;
+
+  new (window as any).Chart(ctx, {
     type: 'line',
     data: {
-      labels: ['入社時', '3ヶ月', '6ヶ月', '1年', '2年', '3年'],
+      labels: ['現在', '1年後', '3年後', '5年後', '10年後'],
       datasets: [{
         label: '成長予測',
-        data: [50, 60, 70, 80, 85, 90],
-        borderColor: 'rgba(102, 126, 234, 1)',
-        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+        data: [50, 65, 75, 85, 95],
+        borderColor: '#0288d1',
+        backgroundColor: 'rgba(2, 136, 209, 0.1)',
+        fill: true,
         tension: 0.4
       }]
     },
     options: {
       scales: {
-        y: {
-          beginAtZero: true,
-          max: 100
-        }
-      }
+        y: { grid: { color: 'rgba(0, 0, 0, 0.1)' }, ticks: { color: '#333' } },
+        x: { grid: { color: 'rgba(0, 0, 0, 0.1)' }, ticks: { color: '#333' } }
+      },
+      plugins: { legend: { display: false } }
     }
   });
 }
 
-/**
- * 相性表を生成
- */
-function generateCompatibilityTable(mbtiType: string) {
-  const compatibleTypes = getCompatibleMBTITypes(mbtiType);
-  
-  return `
-    <table class="compatibility-table">
-      <thead>
-        <tr>
-          <th class="character-3-bold-pro">MBTIタイプ</th>
-          <th class="character-3-bold-pro">相性</th>
-          <th class="character-3-bold-pro">コミュニケーションのコツ</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${compatibleTypes.map(ct => `
-          <tr>
-            <td class="character-3-regular-pro text-high">${ct.type} - ${ct.name}</td>
-            <td class="character-3-regular-pro text-high">${ct.compatibility}</td>
-            <td class="character-3-regular-pro text-high">${ct.tip}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
+function getLuckyColor(num: number): string {
+  const colors = ['赤', '青', '黄', '緑', '紫', '金', '銀', '白', '黒'];
+  return colors[num % colors.length];
 }
 
-/**
- * 相性の良いMBTIタイプを取得
- */
-function getCompatibleMBTITypes(mbtiType: string) {
-  const allTypes = Object.values(MBTI_TYPES);
-  return allTypes.slice(0, 5).map(type => ({
-    type: type.type,
-    name: type.name,
-    compatibility: type.type === mbtiType ? '最高' : 
-                   type.type[0] === mbtiType[0] ? '良好' : 
-                   type.type[2] === mbtiType[2] ? '良好' : '普通',
-    tip: type.communication
-  }));
+function getRiskColor(level: number, type: string): string {
+  if (level > 3) return 'var(--color-error)';
+  if (level > 1) return 'var(--color-warning)';
+  return 'var(--color-success)';
 }
 
-/**
- * ラッキーカラーを取得
- */
-function getLuckyColor(essenceNumber: number) {
-  const colors: Record<number, string> = {
-    1: '赤', 2: 'オレンジ', 3: '黄', 4: '緑',
-    5: '青', 6: '紫', 7: '白', 8: '黒', 9: '金'
-  };
-  return colors[essenceNumber] || '無彩色';
+function getRiskLevelText(level: number, type: string): string {
+  if (level > 3) return '高';
+  if (level > 1) return '中';
+  return '低';
 }
 
-/**
- * ラッキー方向を取得
- */
-function getLuckyDirection(junishi: string) {
-  const directions: Record<string, string> = {
-    '子': '北', '丑': '北東', '寅': '東北東', '卯': '東',
-    '辰': '東南東', '巳': '南東', '午': '南', '未': '南西',
-    '申': '西南西', '酉': '西', '戌': '西北西', '亥': '北西'
-  };
-  return directions[junishi] || '中央';
-}
+// ペア分析機能
+async function analyzePair(managerMBTI: MBTIType) {
+  const codeInput = document.getElementById('subordinate-code') as HTMLInputElement;
+  const resultDiv = document.getElementById('pair-analysis-result') as HTMLDivElement;
 
-/**
- * リスクレベルを取得
- */
-function getRiskLevel(factor: number, defaultLevel: string) {
-  if (factor <= 2) return 'risk-low';
-  if (factor <= 4) return 'risk-medium';
-  return 'risk-high';
-}
+  if (!codeInput || !resultDiv) return;
 
-/**
- * チーム配置を取得
- */
-function getTeamPlacement(mbtiType: string): string[] {
-  if (mbtiType.includes('E') && mbtiType.includes('J')) {
-    return ['リーダー役', 'プロジェクトマネージャー', 'クライアント対応'];
-  } else if (mbtiType.includes('I') && mbtiType.includes('T')) {
-    return ['技術リーダー', '分析担当', '品質管理'];
-  } else if (mbtiType.includes('E') && mbtiType.includes('F')) {
-    return ['チームマネージャー', '人事担当', '顧客サポート'];
-  } else {
-    return ['専門家', '研究開発', 'クリエイティブ'];
+  const code = codeInput.value.trim();
+  if (!code) {
+    alert('部下のYUIコードを入力してください');
+    return;
   }
+
+  const subordinateData = parseYUICode(code);
+  if (!subordinateData) {
+    alert('無効なYUIコードです。形式を確認してください（例: 19900101-M-INTJ）');
+    return;
+  }
+
+  const compatibility = analyzeCompatibility(managerMBTI, subordinateData.mbti);
+
+  resultDiv.innerHTML = `
+    <h5 style="color: var(--color-primary); border-bottom: 1px solid var(--color-border); padding-bottom: 8px; margin-bottom: 16px;">
+      診断結果: ${MBTI_TYPES[managerMBTI].name} × ${MBTI_TYPES[subordinateData.mbti].name}
+    </h5>
+    
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+      <div style="font-size: 2.5rem; font-weight: bold; color: var(--color-accent);">${compatibility.score}点</div>
+      <div style="font-weight: bold;">${compatibility.summary}</div>
+    </div>
+
+    <div style="background: #fff; padding: 16px; border-radius: 8px; border-left: 4px solid var(--color-accent);">
+      <strong style="display: block; margin-bottom: 8px; color: var(--color-primary);">🗣 コミュニケーション翻訳（1on1アドバイス）</strong>
+      <p style="white-space: pre-wrap; margin-bottom: 0;">${compatibility.communicationAdvice}</p>
+    </div>
+
+    <div style="margin-top: 16px;">
+      <strong>✨ シナジーポイント</strong>
+      <ul style="margin-top: 8px; padding-left: 20px;">
+        ${compatibility.synergyPoints.map(p => `<li>${p}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+
+  resultDiv.style.display = 'block';
 }
+
+// PDFダウンロード機能
+downloadPdfBtn.addEventListener('click', () => {
+  if (bulkMembers.length === 0) {
+    alert('データがありません');
+    return;
+  }
+
+  const doc = new jsPDF();
+
+  doc.setFontSize(20);
+  doc.text('YUI - Team Analysis Report', 14, 22);
+
+  doc.setFontSize(11);
+  doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 30);
+  doc.text(`Total Members: ${bulkMembers.length}`, 14, 36);
+
+  const tableData = bulkMembers.map(m => [
+    m.name,
+    `${m.birthDate.year}/${m.birthDate.month}/${m.birthDate.day}`,
+    m.gender,
+    m.mbti || '-',
+    m.fortune.essenceNumber,
+    m.fortune.talentNumber
+  ]);
+
+  autoTable(doc, {
+    head: [['Name', 'Birth Date', 'Gender', 'MBTI', 'Essence', 'Talent']],
+    body: tableData,
+    startY: 45,
+  });
+
+  doc.save('yui-team-analysis.pdf');
+});
+
+// グローバルスコープに公開
+(window as any).goToStep = goToStep;
+(window as any).calculateFortune = calculateFortune;
+(window as any).analyzePair = analyzePair;

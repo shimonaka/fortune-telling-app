@@ -1,0 +1,448 @@
+/**
+ * Apple Human Interface Guidelines準拠デザインシステム
+ * https://developer.apple.com/design/human-interface-guidelines/
+ * 
+ * 主要原則:
+ * - Clarity（明確性）: 明確で理解しやすいUI
+ * - Deference（尊重）: コンテンツを優先し、UIは控えめに
+ * - Depth（深み）: 階層と動きで理解を深める
+ */
+
+:root {
+  /* ============================================
+     Apple System Colors
+     ============================================ */
+  
+  /* System Blue (Primary) */
+  --apple-blue: #007AFF;
+  --apple-blue-hover: #0051D5;
+  --apple-blue-light: #E3F2FD;
+  
+  /* System Gray */
+  --apple-gray-1: #8E8E93;
+  --apple-gray-2: #C7C7CC;
+  --apple-gray-3: #D1D1D6;
+  --apple-gray-4: #E5E5EA;
+  --apple-gray-5: #F2F2F7;
+  --apple-gray-6: #FFFFFF;
+  
+  /* System Background */
+  --apple-system-background: #FFFFFF;
+  --apple-secondary-background: #F2F2F7;
+  --apple-tertiary-background: #FFFFFF;
+  
+  /* System Label Colors */
+  --apple-label: #000000;
+  --apple-secondary-label: rgba(0, 0, 0, 0.6);
+  --apple-tertiary-label: rgba(0, 0, 0, 0.4);
+  --apple-quaternary-label: rgba(0, 0, 0, 0.18);
+  
+  /* System Fill Colors */
+  --apple-fill: rgba(120, 120, 128, 0.2);
+  --apple-secondary-fill: rgba(120, 120, 128, 0.16);
+  --apple-tertiary-fill: rgba(120, 120, 128, 0.12);
+  --apple-quaternary-fill: rgba(120, 120, 128, 0.08);
+  
+  /* System Separator */
+  --apple-separator: rgba(60, 60, 67, 0.29);
+  --apple-opaque-separator: #C6C6C8;
+  
+  /* System Grouped Background */
+  --apple-grouped-background: #F2F2F7;
+  --apple-secondary-grouped-background: #FFFFFF;
+  --apple-tertiary-grouped-background: #F2F2F7;
+  
+  /* ============================================
+     Typography (SF Pro)
+     ============================================ */
+  
+  /* Apple HIG: タイポグラフィは明確で読みやすく、階層的であること */
+  --apple-font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --apple-font-family-jp: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+  
+  /* Large Title (34pt) */
+  --apple-font-size-large-title: 34px;
+  --apple-line-height-large-title: 41px;
+  --apple-font-weight-large-title: 700;
+  
+  /* Title 1 (28pt) */
+  --apple-font-size-title-1: 28px;
+  --apple-line-height-title-1: 34px;
+  --apple-font-weight-title-1: 700;
+  
+  /* Title 2 (22pt) */
+  --apple-font-size-title-2: 22px;
+  --apple-line-height-title-2: 28px;
+  --apple-font-weight-title-2: 700;
+  
+  /* Title 3 (20pt) */
+  --apple-font-size-title-3: 20px;
+  --apple-line-height-title-3: 25px;
+  --apple-font-weight-title-3: 600;
+  
+  /* Headline (17pt) */
+  --apple-font-size-headline: 17px;
+  --apple-line-height-headline: 22px;
+  --apple-font-weight-headline: 600;
+  
+  /* Body (17pt) */
+  --apple-font-size-body: 17px;
+  --apple-line-height-body: 22px;
+  --apple-font-weight-body: 400;
+  
+  /* Callout (16pt) */
+  --apple-font-size-callout: 16px;
+  --apple-line-height-callout: 21px;
+  --apple-font-weight-callout: 400;
+  
+  /* Subheadline (15pt) */
+  --apple-font-size-subheadline: 15px;
+  --apple-line-height-subheadline: 20px;
+  --apple-font-weight-subheadline: 400;
+  
+  /* Footnote (13pt) */
+  --apple-font-size-footnote: 13px;
+  --apple-line-height-footnote: 18px;
+  --apple-font-weight-footnote: 400;
+  
+  /* Caption 1 (12pt) */
+  --apple-font-size-caption-1: 12px;
+  --apple-line-height-caption-1: 16px;
+  --apple-font-weight-caption-1: 400;
+  
+  /* Caption 2 (11pt) */
+  --apple-font-size-caption-2: 11px;
+  --apple-line-height-caption-2: 13px;
+  --apple-font-weight-caption-2: 400;
+  
+  /* ============================================
+     Spacing (8pt Grid System)
+     ============================================ */
+  
+  /* Apple HIG: 8ptグリッドシステムを使用 */
+  --apple-spacing-1: 4px;   /* 0.5 units */
+  --apple-spacing-2: 8px;   /* 1 unit */
+  --apple-spacing-3: 12px;  /* 1.5 units */
+  --apple-spacing-4: 16px;  /* 2 units */
+  --apple-spacing-5: 20px;  /* 2.5 units */
+  --apple-spacing-6: 24px;  /* 3 units */
+  --apple-spacing-8: 32px;  /* 4 units */
+  --apple-spacing-10: 40px; /* 5 units */
+  --apple-spacing-12: 48px; /* 6 units */
+  --apple-spacing-16: 64px; /* 8 units */
+  --apple-spacing-20: 80px; /* 10 units */
+  
+  /* ============================================
+     Corner Radius
+     ============================================ */
+  
+  /* Apple HIG: コーナー半径は控えめに */
+  --apple-radius-small: 6px;
+  --apple-radius-medium: 10px;
+  --apple-radius-large: 14px;
+  --apple-radius-extra-large: 20px;
+  --apple-radius-full: 9999px;
+  
+  /* ============================================
+     Shadows (Subtle)
+     ============================================ */
+  
+  /* Apple HIG: シャドウは控えめで自然に */
+  --apple-shadow-small: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --apple-shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --apple-shadow-large: 0 8px 24px rgba(0, 0, 0, 0.2);
+  
+  /* ============================================
+     Touch Targets
+     ============================================ */
+  
+  /* Apple HIG: タッチターゲットは44x44pt以上 */
+  --apple-touch-target-min: 44px;
+  
+  /* ============================================
+     Animation Timing
+     ============================================ */
+  
+  /* Apple HIG: アニメーションは自然で意味のある動き */
+  --apple-animation-fast: 0.2s;
+  --apple-animation-normal: 0.3s;
+  --apple-animation-slow: 0.5s;
+  --apple-easing: cubic-bezier(0.4, 0.0, 0.2, 1); /* Ease In Out */
+  --apple-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* ============================================
+   Typography Classes (Apple HIG準拠)
+   ============================================ */
+
+.apple-large-title {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-large-title);
+  line-height: var(--apple-line-height-large-title);
+  font-weight: var(--apple-font-weight-large-title);
+  letter-spacing: 0.37px;
+}
+
+.apple-title-1 {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-title-1);
+  line-height: var(--apple-line-height-title-1);
+  font-weight: var(--apple-font-weight-title-1);
+  letter-spacing: 0.36px;
+}
+
+.apple-title-2 {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-title-2);
+  line-height: var(--apple-line-height-title-2);
+  font-weight: var(--apple-font-weight-title-2);
+  letter-spacing: 0.35px;
+}
+
+.apple-title-3 {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-title-3);
+  line-height: var(--apple-line-height-title-3);
+  font-weight: var(--apple-font-weight-title-3);
+  letter-spacing: 0.38px;
+}
+
+.apple-headline {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-headline);
+  line-height: var(--apple-line-height-headline);
+  font-weight: var(--apple-font-weight-headline);
+  letter-spacing: -0.41px;
+}
+
+.apple-body {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-body);
+  line-height: var(--apple-line-height-body);
+  font-weight: var(--apple-font-weight-body);
+  letter-spacing: -0.41px;
+}
+
+.apple-callout {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-callout);
+  line-height: var(--apple-line-height-callout);
+  font-weight: var(--apple-font-weight-callout);
+  letter-spacing: -0.32px;
+}
+
+.apple-subheadline {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-subheadline);
+  line-height: var(--apple-line-height-subheadline);
+  font-weight: var(--apple-font-weight-subheadline);
+  letter-spacing: -0.24px;
+}
+
+.apple-footnote {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-footnote);
+  line-height: var(--apple-line-height-footnote);
+  font-weight: var(--apple-font-weight-footnote);
+  letter-spacing: -0.08px;
+}
+
+.apple-caption-1 {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-caption-1);
+  line-height: var(--apple-line-height-caption-1);
+  font-weight: var(--apple-font-weight-caption-1);
+  letter-spacing: 0;
+}
+
+.apple-caption-2 {
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-caption-2);
+  line-height: var(--apple-line-height-caption-2);
+  font-weight: var(--apple-font-weight-caption-2);
+  letter-spacing: 0.07px;
+}
+
+/* ============================================
+   Color Utilities (Apple HIG準拠)
+   ============================================ */
+
+.apple-label {
+  color: var(--apple-label);
+}
+
+.apple-secondary-label {
+  color: var(--apple-secondary-label);
+}
+
+.apple-tertiary-label {
+  color: var(--apple-tertiary-label);
+}
+
+.apple-quaternary-label {
+  color: var(--apple-quaternary-label);
+}
+
+.apple-blue {
+  color: var(--apple-blue);
+}
+
+/* ============================================
+   Background Utilities
+   ============================================ */
+
+.apple-system-background {
+  background-color: var(--apple-system-background);
+}
+
+.apple-secondary-background {
+  background-color: var(--apple-secondary-background);
+}
+
+.apple-tertiary-background {
+  background-color: var(--apple-tertiary-background);
+}
+
+.apple-grouped-background {
+  background-color: var(--apple-grouped-background);
+}
+
+.apple-secondary-grouped-background {
+  background-color: var(--apple-secondary-grouped-background);
+}
+
+/* ============================================
+   Button Styles (Apple HIG準拠)
+   ============================================ */
+
+.apple-button {
+  min-height: var(--apple-touch-target-min);
+  padding: var(--apple-spacing-2) var(--apple-spacing-4);
+  border-radius: var(--apple-radius-medium);
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-body);
+  font-weight: 600;
+  letter-spacing: -0.41px;
+  transition: all var(--apple-animation-normal) var(--apple-easing);
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--apple-spacing-2);
+}
+
+.apple-button-primary {
+  background-color: var(--apple-blue);
+  color: #FFFFFF;
+}
+
+.apple-button-primary:hover {
+  background-color: var(--apple-blue-hover);
+  transform: scale(0.98);
+}
+
+.apple-button-primary:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+.apple-button-secondary {
+  background-color: var(--apple-secondary-background);
+  color: var(--apple-label);
+  border: 0.5px solid var(--apple-separator);
+}
+
+.apple-button-secondary:hover {
+  background-color: var(--apple-tertiary-background);
+}
+
+.apple-button-secondary:active {
+  opacity: 0.7;
+}
+
+/* ============================================
+   Card Styles (Apple HIG準拠)
+   ============================================ */
+
+.apple-card {
+  background-color: var(--apple-secondary-grouped-background);
+  border-radius: var(--apple-radius-large);
+  padding: var(--apple-spacing-4);
+  box-shadow: var(--apple-shadow-small);
+  transition: all var(--apple-animation-normal) var(--apple-easing);
+}
+
+.apple-card:hover {
+  box-shadow: var(--apple-shadow-medium);
+  transform: translateY(-2px);
+}
+
+/* ============================================
+   Input Styles (Apple HIG準拠)
+   ============================================ */
+
+.apple-input {
+  min-height: var(--apple-touch-target-min);
+  padding: var(--apple-spacing-3) var(--apple-spacing-4);
+  border-radius: var(--apple-radius-medium);
+  border: 0.5px solid var(--apple-separator);
+  background-color: var(--apple-secondary-grouped-background);
+  font-family: var(--apple-font-family-jp);
+  font-size: var(--apple-font-size-body);
+  color: var(--apple-label);
+  transition: all var(--apple-animation-fast) var(--apple-easing);
+}
+
+.apple-input:focus {
+  outline: none;
+  border-color: var(--apple-blue);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.apple-input::placeholder {
+  color: var(--apple-tertiary-label);
+}
+
+/* ============================================
+   Separator
+   ============================================ */
+
+.apple-separator {
+  height: 0.5px;
+  background-color: var(--apple-separator);
+  margin: var(--apple-spacing-4) 0;
+}
+
+/* ============================================
+   Animation Utilities
+   ============================================ */
+
+@keyframes apple-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes apple-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.apple-fade-in {
+  animation: apple-fade-in var(--apple-animation-normal) var(--apple-easing);
+}
+
+.apple-slide-up {
+  animation: apple-slide-up var(--apple-animation-slow) var(--apple-easing);
+}
+

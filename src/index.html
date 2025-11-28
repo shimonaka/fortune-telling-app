@@ -1,193 +1,384 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>タレントナビゲーター - 人材育成分析システム</title>
-  <link rel="stylesheet" href="/sparkle-design.css">
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <title>YUI - 結 -</title>
+  <meta name="description" content="「なんとなく合わない」を、「だから合う」に変えていく。チームビルディング＆人材育成支援ツール。">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
   <div class="container">
-    <div class="header">
-      <h1 class="character-8-bold-pro">
-        <span class="icon-6-fill-0 material-symbols-outlined">navigation</span>
-        タレントナビゲーター
-      </h1>
-      <p class="character-3-regular-pro">人材育成分析システム</p>
+    <header class="header">
+      <h1>YUI - 結 -</h1>
+      <p>「なんとなく合わない」を、「だから合う」に変えていく。</p>
+      <button id="admin-mode-btn" class="btn btn-secondary"
+        style="margin-top: 20px; font-size: 0.8rem; padding: 8px 16px;">
+        <span class="material-symbols-outlined">admin_panel_settings</span> 管理者モード（一括分析）
+      </button>
+    </header>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>データを分析中...</p>
+      <p style="font-size: 0.9rem; color: var(--color-text-muted);">数千のパラメータから特性を算出しています</p>
     </div>
 
-    <!-- 入力フォーム -->
-    <div class="form-section" id="form-section">
-      <div class="error" id="error"></div>
-      
-      <!-- ステップインジケーター -->
-      <div class="step-indicator" id="step-indicator">
-        <div class="step-item active" data-step="1">
+    <div id="error" class="error"></div>
+
+    <form id="fortune-form" class="form-section" onsubmit="return false;">
+      <!-- Step Indicator -->
+      <div class="step-indicator">
+        <div class="step-item active" id="step-indicator-1">
           <div class="step-number">1</div>
-          <div class="step-label character-2-regular-pro text-middle">基本情報</div>
+          <span>基本情報</span>
         </div>
         <div class="step-line"></div>
-        <div class="step-item" data-step="2">
+        <div class="step-item" id="step-indicator-2">
           <div class="step-number">2</div>
-          <div class="step-label character-2-regular-pro text-middle">MBTIタイプ</div>
+          <span>性格診断</span>
         </div>
         <div class="step-line"></div>
-        <div class="step-item" data-step="3">
+        <div class="step-item" id="step-indicator-3">
           <div class="step-number">3</div>
-          <div class="step-label character-2-regular-pro text-middle">分析の目的</div>
+          <span>分析目的</span>
         </div>
       </div>
 
-      <form id="fortune-form">
-        <!-- ステップ1: 基本情報 -->
-        <div class="form-step active" id="step-1" data-step="1">
-          <h2 class="character-6-bold-pro text-primary">基本情報</h2>
-          <p class="character-3-regular-pro text-middle mb-5">生年月日と性別を入力してください</p>
-          
+      <!-- Step 1: Basic Info -->
+      <div class="form-step active" id="step-1">
+        <div class="card">
+          <h2><span class="material-symbols-outlined">badge</span> 基本データ入力</h2>
+          <p>分析対象者の生年月日と性別を入力してください。</p>
+
           <div class="form-group">
-            <label class="character-3-bold-pro text-high">生年月日 <span class="text-negative">*</span></label>
-            <div class="form-row">
-              <div>
-                <label for="year" class="character-2-regular-pro text-middle">年</label>
-                <input type="number" id="year" name="year" min="1900" max="2100" placeholder="1987" required class="character-3-regular-pro">
-                <span class="field-error character-2-regular-pro text-negative" id="year-error"></span>
-              </div>
-              <div>
-                <label for="month" class="character-2-regular-pro text-middle">月</label>
-                <input type="number" id="month" name="month" min="1" max="12" placeholder="4" required class="character-3-regular-pro">
-                <span class="field-error character-2-regular-pro text-negative" id="month-error"></span>
-              </div>
-              <div>
-                <label for="day" class="character-2-regular-pro text-middle">日</label>
-                <input type="number" id="day" name="day" min="1" max="31" placeholder="15" required class="character-3-regular-pro">
-                <span class="field-error character-2-regular-pro text-negative" id="day-error"></span>
-              </div>
+            <label>生年月日 <span style="color: var(--color-error)">*</span></label>
+            <div style="display: flex; gap: 10px;">
+              <input type="number" id="year" placeholder="年 (例: 1990)" required min="1900" max="2100">
+              <input type="number" id="month" placeholder="月" required min="1" max="12">
+              <input type="number" id="day" placeholder="日" required min="1" max="31">
             </div>
+            <div id="year-error" class="field-error"></div>
+            <div id="month-error" class="field-error"></div>
+            <div id="day-error" class="field-error"></div>
           </div>
 
           <div class="form-group">
-            <label for="hour" class="character-3-bold-pro text-high">生まれた時間（オプション）</label>
-            <input type="time" id="hour" name="hour" class="character-3-regular-pro">
-            <small class="character-2-regular-pro text-low">時間がわからない場合は空欄でも可</small>
+            <label>出生時間 (任意)</label>
+            <input type="time" id="hour">
+            <p style="font-size: 0.85rem; margin-top: 5px; color: var(--color-text-muted);">※不明な場合は空欄で構いません。</p>
           </div>
 
           <div class="form-group">
-            <label for="gender" class="character-3-bold-pro text-high">性別 <span class="text-negative">*</span></label>
-            <select id="gender" name="gender" required class="character-3-regular-pro">
-              <option value="">選択してください</option>
+            <label>性別 <span style="color: var(--color-error)">*</span></label>
+            <select id="gender" required>
+              <option value="" disabled selected>選択してください</option>
               <option value="male">男性</option>
               <option value="female">女性</option>
               <option value="other">その他</option>
             </select>
-            <span class="field-error character-2-regular-pro text-negative" id="gender-error"></span>
+            <div id="gender-error" class="field-error"></div>
           </div>
 
-          <div class="step-actions">
-            <button type="button" class="step-btn-next character-4-bold-pro" onclick="goToStep(2)">次へ</button>
+          <div class="text-center">
+            <button type="button" id="btn-step1-next" class="btn btn-primary">
+              次へ進む <span class="material-symbols-outlined">arrow_forward</span>
+            </button>
           </div>
         </div>
+      </div>
 
-        <!-- ステップ2: MBTIタイプ -->
-        <div class="form-step" id="step-2" data-step="2">
-          <h2 class="character-6-bold-pro text-primary">MBTIタイプ</h2>
-          <p class="character-3-regular-pro text-middle mb-5">あなたのMBTIタイプを選択または診断してください</p>
-          
+      <!-- Step 2: MBTI -->
+      <div class="form-step" id="step-2">
+        <div class="card">
+          <h2><span class="material-symbols-outlined">psychology</span> 特性診断 (MBTI)</h2>
+          <p>MBTIタイプを選択するか、簡易診断を行ってください。</p>
+
           <div class="form-group">
-            <label class="character-3-bold-pro text-high">MBTIタイプ</label>
-            <div class="radio-group">
-              <label class="character-3-regular-pro text-high cursor-pointer">
+            <div class="radio-group" style="flex-direction: row; justify-content: center; margin-bottom: 20px;">
+              <label style="flex: 1; justify-content: center;">
                 <input type="radio" name="mbti-mode" value="known" checked>
-                既に知っている
+                <span>タイプ入力</span>
               </label>
-              <label class="character-3-regular-pro text-high cursor-pointer">
-                <input type="radio" name="mbti-mode" value="unknown">
-                MBTIがわからない（簡易診断を受ける）
+              <label style="flex: 1; justify-content: center;">
+                <input type="radio" name="mbti-mode" value="diagnose">
+                <span>簡易診断</span>
               </label>
             </div>
           </div>
 
-          <div class="form-group" id="mbti-select-group">
-            <label for="mbti-type" class="character-3-bold-pro text-high">MBTIタイプを選択 <span class="text-negative">*</span></label>
-            <select id="mbti-type" name="mbti-type" class="character-3-regular-pro">
-              <option value="">選択してください</option>
-              <option value="INTJ">INTJ - 建築家</option>
-              <option value="INTP">INTP - 論理学者</option>
-              <option value="ENTJ">ENTJ - 指揮官</option>
-              <option value="ENTP">ENTP - 討論者</option>
-              <option value="INFJ">INFJ - 提唱者</option>
-              <option value="INFP">INFP - 仲介者</option>
-              <option value="ENFJ">ENFJ - 主人公</option>
-              <option value="ENFP">ENFP - 運動家</option>
-              <option value="ISTJ">ISTJ - 管理者</option>
-              <option value="ISFJ">ISFJ - 擁護者</option>
-              <option value="ESTJ">ESTJ - 幹部</option>
-              <option value="ESFJ">ESFJ - 領事官</option>
-              <option value="ISTP">ISTP - 巨匠</option>
-              <option value="ISFP">ISFP - 冒険家</option>
-              <option value="ESTP">ESTP - 起業家</option>
-              <option value="ESFP">ESFP - エンターテイナー</option>
-            </select>
-            <span class="field-error character-2-regular-pro text-negative" id="mbti-type-error"></span>
+          <div id="mbti-select-group">
+            <div class="form-group">
+              <label>MBTIタイプを選択</label>
+              <select id="mbti-type">
+                <option value="" disabled selected>選択してください</option>
+                <option value="INTJ">INTJ (建築家)</option>
+                <option value="INTP">INTP (論理学者)</option>
+                <option value="ENTJ">ENTJ (指揮官)</option>
+                <option value="ENTP">ENTP (討論者)</option>
+                <option value="INFJ">INFJ (提唱者)</option>
+                <option value="INFP">INFP (仲介者)</option>
+                <option value="ENFJ">ENFJ (主人公)</option>
+                <option value="ENFP">ENFP (運動家)</option>
+                <option value="ISTJ">ISTJ (管理者)</option>
+                <option value="ISFJ">ISFJ (擁護者)</option>
+                <option value="ESTJ">ESTJ (幹部)</option>
+                <option value="ESFJ">ESFJ (領事官)</option>
+                <option value="ISTP">ISTP (巨匠)</option>
+                <option value="ISFP">ISFP (冒険家)</option>
+                <option value="ESTP">ESTP (起業家)</option>
+                <option value="ESFP">ESFP (エンターテイナー)</option>
+              </select>
+              <div id="mbti-type-error" class="field-error"></div>
+            </div>
           </div>
 
-          <div class="form-group" id="mbti-diagnosis-group" style="display: none;">
-            <label class="character-3-bold-pro text-high">MBTI簡易診断</label>
-            <div id="mbti-questions"></div>
+          <div id="mbti-diagnosis-group" style="display: none;">
+            <div id="mbti-questions">
+              <!-- Questions will be injected here -->
+            </div>
           </div>
 
-          <div class="step-actions">
-            <button type="button" class="step-btn-prev character-3-bold-pro" onclick="goToStep(1)">戻る</button>
-            <button type="button" class="step-btn-next character-4-bold-pro" onclick="goToStep(3)">次へ</button>
+          <div class="text-center" style="display: flex; justify-content: space-between;">
+            <button type="button" id="btn-step2-back" class="btn btn-secondary">
+              <span class="material-symbols-outlined">arrow_back</span> 戻る
+            </button>
+            <button type="button" id="btn-step2-next" class="btn btn-primary">
+              次へ進む <span class="material-symbols-outlined">arrow_forward</span>
+            </button>
           </div>
         </div>
+      </div>
 
-        <!-- ステップ3: 分析の目的 -->
-        <div class="form-step" id="step-3" data-step="3">
-          <h2 class="character-6-bold-pro text-primary">分析の目的</h2>
-          <p class="character-3-regular-pro text-middle mb-5">結果の種類を選択してください</p>
-          
+      <!-- Step 3: Purpose -->
+      <div class="form-step" id="step-3">
+        <div class="card">
+          <h2><span class="material-symbols-outlined">analytics</span> 分析目的の選択</h2>
+          <p>分析結果の表示形式を選択してください。</p>
+
           <div class="form-group">
-            <label class="character-3-bold-pro text-high">結果の種類</label>
             <div class="radio-group">
-              <label class="character-3-regular-pro text-high cursor-pointer">
+              <label>
                 <input type="radio" name="purpose" value="personal" checked>
-                本人向け（キャリア特性、適性、成長領域など）
+                <span><strong>本人向け分析</strong><br><small
+                    style="color: var(--color-text-muted);">自己理解、キャリア開発、潜在能力の発見</small></span>
               </label>
-              <label class="character-3-regular-pro text-high cursor-pointer">
+              <label>
                 <input type="radio" name="purpose" value="employer">
-                雇用主向け（成長予測、リスク管理、育成プランなど）
+                <span><strong>管理者・人事向け分析</strong><br><small
+                    style="color: var(--color-text-muted);">マネジメント、適正配置、離職防止</small></span>
               </label>
             </div>
           </div>
 
-          <div class="step-actions">
-            <button type="button" class="step-btn-prev character-3-bold-pro" onclick="goToStep(2)">戻る</button>
-            <button type="submit" class="submit-btn character-4-bold-pro">分析を実行する</button>
+          <div class="text-center" style="display: flex; justify-content: space-between;">
+            <button type="button" id="btn-step3-back" class="btn btn-secondary">
+              <span class="material-symbols-outlined">arrow_back</span> 戻る
+            </button>
+            <button type="submit" class="btn btn-primary">
+              <span class="material-symbols-outlined">check_circle</span> 分析を実行
+            </button>
           </div>
         </div>
-      </form>
+      </div>
+    </form>
+
+    <!-- Bulk Analysis Section (Admin Mode) -->
+    <div id="bulk-analysis-section" style="display: none;">
+      <div class="card">
+        <h2><span class="material-symbols-outlined">group_add</span> メンバー管理</h2>
+
+        <!-- Tabs for Entry Methods -->
+        <div class="tabs"
+          style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--color-border);">
+          <button class="tab-btn active" onclick="switchTab('manual')"
+            style="padding: 10px 20px; border: none; background: none; cursor: pointer; border-bottom: 2px solid var(--color-primary); font-weight: bold;">手動入力</button>
+          <button class="tab-btn" onclick="switchTab('yui')"
+            style="padding: 10px 20px; border: none; background: none; cursor: pointer; color: var(--color-text-muted);">YUIコード入力</button>
+          <button class="tab-btn" onclick="switchTab('excel')"
+            style="padding: 10px 20px; border: none; background: none; cursor: pointer; color: var(--color-text-muted);">Excel読込</button>
+        </div>
+
+        <!-- Manual Entry Form -->
+        <div id="tab-manual" class="tab-content">
+          <div class="form-grid"
+            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>氏名</label>
+              <input type="text" id="manual-name" placeholder="氏名">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>生年月日</label>
+              <div style="display: flex; gap: 5px;">
+                <input type="number" id="manual-year" placeholder="年" style="width: 100px;">
+                <input type="number" id="manual-month" placeholder="月" style="width: 80px;">
+                <input type="number" id="manual-day" placeholder="日" style="width: 80px;">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>性別</label>
+              <select id="manual-gender">
+                <option value="male">男性</option>
+                <option value="female">女性</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>MBTI (任意)</label>
+              <select id="manual-mbti">
+                <option value="">不明/未設定</option>
+                <option value="INTJ">INTJ (建築家)</option>
+                <option value="INTP">INTP (論理学者)</option>
+                <option value="ENTJ">ENTJ (指揮官)</option>
+                <option value="ENTP">ENTP (討論者)</option>
+                <option value="INFJ">INFJ (提唱者)</option>
+                <option value="INFP">INFP (仲介者)</option>
+                <option value="ENFJ">ENFJ (主人公)</option>
+                <option value="ENFP">ENFP (運動家)</option>
+                <option value="ISTJ">ISTJ (管理者)</option>
+                <option value="ISFJ">ISFJ (擁護者)</option>
+                <option value="ESTJ">ESTJ (幹部)</option>
+                <option value="ESFJ">ESFJ (領事官)</option>
+                <option value="ISTP">ISTP (巨匠)</option>
+                <option value="ISFP">ISFP (冒険家)</option>
+                <option value="ESTP">ESTP (起業家)</option>
+                <option value="ESFP">ESFP (エンターテイナー)</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="addMemberFromForm()" style="height: 42px;">追加</button>
+          </div>
+        </div>
+
+        <!-- YUI Code Entry Form -->
+        <div id="tab-yui" class="tab-content" style="display: none;">
+          <div class="form-grid"
+            style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 15px; align-items: end;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>氏名</label>
+              <input type="text" id="yui-name" placeholder="氏名">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>YUIコード</label>
+              <input type="text" id="yui-code-input" placeholder="例: 19900101-M-INTJ">
+            </div>
+            <button class="btn btn-primary" onclick="addMemberFromYuiCode()" style="height: 42px;">追加</button>
+          </div>
+        </div>
+
+        <!-- Excel Upload (Moved here) -->
+        <div id="tab-excel" class="tab-content" style="display: none;">
+          <div id="drop-zone"
+            style="border: 2px dashed var(--color-border); padding: 20px; text-align: center; border-radius: var(--radius-md); cursor: pointer; transition: all 0.3s;">
+            <span class="material-symbols-outlined"
+              style="font-size: 32px; color: var(--color-text-muted);">cloud_upload</span>
+            <p style="margin-top: 5px;">Excelファイルをドラッグ＆ドロップ<br>またはクリックして選択</p>
+            <input type="file" id="file-input" accept=".xlsx, .xls" style="display: none;">
+          </div>
+        </div>
+
+        <!-- Member List Table -->
+        <div style="margin-top: 30px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0;">メンバーリスト (<span id="member-count">0</span>名)</h3>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn btn-secondary btn-sm" onclick="clearMembers()">クリア</button>
+              <button class="btn btn-success btn-sm" onclick="downloadMembersExcel()">
+                <span class="material-symbols-outlined"
+                  style="font-size: 1.2rem; vertical-align: middle;">download</span> Excel出力
+              </button>
+            </div>
+          </div>
+          <div style="overflow-x: auto;">
+            <table id="member-table" style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+              <thead>
+                <tr style="background: var(--color-bg-tertiary); border-bottom: 2px solid var(--color-border);">
+                  <th style="padding: 10px; text-align: left;">氏名</th>
+                  <th style="padding: 10px; text-align: left;">生年月日</th>
+                  <th style="padding: 10px; text-align: left;">性別</th>
+                  <th style="padding: 10px; text-align: left;">MBTI</th>
+                  <th style="padding: 10px; text-align: center;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="member-list-body">
+                <!-- Rows injected here -->
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 20px; color: var(--color-text-muted);">メンバーがいません
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="bulk-result" style="display: none;">
+        <div class="card">
+          <h3><span class="material-symbols-outlined">pie_chart</span> チーム補完マップ</h3>
+          <div class="chart-container">
+            <canvas id="team-map-chart"></canvas>
+          </div>
+          <div style="margin-top: 20px; text-align: center;">
+            <p id="team-summary-text"></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3><span class="material-symbols-outlined">warning</span> リスク・ヒートマップ</h3>
+          <div id="risk-heatmap"
+            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;">
+            <!-- Risk items injected here -->
+          </div>
+        </div>
+
+        <!-- Synergy Analysis Section -->
+        <div class="card">
+          <h3><span class="material-symbols-outlined">handshake</span> メンバー間シナジー分析</h3>
+          <p>2名のメンバーを選択して、相性と連携アドバイスを表示します。</p>
+
+          <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+              <label>メンバーA</label>
+              <select id="synergy-member-a"
+                style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--color-border);">
+                <option value="">選択してください</option>
+              </select>
+            </div>
+            <div style="font-size: 1.5rem; color: var(--color-text-muted);">×</div>
+            <div style="flex: 1; min-width: 200px;">
+              <label>メンバーB</label>
+              <select id="synergy-member-b"
+                style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid var(--color-border);">
+                <option value="">選択してください</option>
+              </select>
+            </div>
+            <button id="analyze-synergy-btn" class="btn btn-primary" style="height: 42px; margin-top: 24px;">
+              分析実行
+            </button>
+          </div>
+
+          <div id="synergy-result"
+            style="display: none; background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid var(--color-border);">
+            <!-- Synergy Result Content -->
+          </div>
+        </div>
+
+        <div class="text-center">
+          <button id="download-pdf-btn" class="btn btn-primary">
+            <span class="material-symbols-outlined">picture_as_pdf</span> 分析レポートをダウンロード (PDF)
+          </button>
+        </div>
+      </div>
     </div>
 
-    <div class="loading" id="loading">
-      <div class="spinner"></div>
-      <div class="progress-bar">
-        <div class="progress-fill"></div>
-      </div>
-      <p class="character-3-regular-pro text-middle">分析を実行中...</p>
-      <div class="skeleton-container" style="margin-top: var(--spacing-8); max-width: 800px; margin-left: auto; margin-right: auto;">
-        <div class="skeleton skeleton-title"></div>
-        <div class="skeleton skeleton-text"></div>
-        <div class="skeleton skeleton-text" style="width: 80%;"></div>
-        <div class="skeleton skeleton-card" style="margin-top: var(--spacing-4);"></div>
-      </div>
+    <div id="result-section" class="result-section">
+      <!-- Results will be injected here -->
     </div>
-
-    <div class="result-section" id="result-section"></div>
   </div>
-
-  <script type="module" src="./app.ts"></script>
+  <script type="module" src="app.ts"></script>
 </body>
+
 </html>
