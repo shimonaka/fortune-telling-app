@@ -37,9 +37,10 @@ const MBTI_ROLE_SCORES: Record<MBTIType, Record<RoleType, number>> = {
     ISFJ: { Coordinator: 5, Executor: 4, Strategist: 2, Leader: 1, Innovator: 1 },
     ESFP: { Coordinator: 4, Innovator: 4, Executor: 3, Leader: 2, Strategist: 1 },
 
-    // Strategist: INTJ, INFJ
+    // Strategist: INTJ, INFJ, INFP
     INTJ: { Strategist: 5, Leader: 3, Innovator: 3, Executor: 2, Coordinator: 1 },
-    INFJ: { Strategist: 5, Coordinator: 4, Innovator: 3, Leader: 2, Executor: 1 }
+    INFJ: { Strategist: 5, Coordinator: 4, Innovator: 3, Leader: 2, Executor: 1 },
+    INFP: { Strategist: 3, Coordinator: 4, Innovator: 5, Leader: 1, Executor: 2 }
 };
 
 // 通変星による加点ロジック
