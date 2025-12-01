@@ -15,6 +15,7 @@ import autoTable from 'jspdf-autotable';
 import { analyzeRisk } from './fortune/risk-logic.js';
 import { calculateTeamRoles } from './fortune/role-logic.js';
 import { analyzeSynergy } from './fortune/synergy-logic.js';
+import { calculateRadarData } from './fortune/radar-logic.js';
 
 // DOM要素の取得
 const form = document.getElementById('fortune-form') as HTMLFormElement;
@@ -1024,6 +1025,10 @@ function hideResult() {
   resultSection.classList.remove('show');
 }
 
+// ... (existing imports)
+
+// ...
+
 /**
  * 本人向け結果を表示
  */
@@ -1033,8 +1038,8 @@ function displayPersonalResult(result: CompleteFortuneResult) {
   const essence = ESSENCE_NUMBER_TRAITS[numerology.essenceNumber];
   const inquiry = INQUIRY_NUMBER_TRAITS[numerology.inquiryNumber];
 
-  // レーダーチャート用のデータ
-  const radarData = calculateRadarData(numerology, mbti);
+  // レーダーチャート用のデータ (新しいロジックを使用)
+  const radarData = calculateRadarData(mbti, fourPillars);
 
   const html = `
     <div class="result-header">
@@ -1285,27 +1290,7 @@ function displayEmployerResult(result: CompleteFortuneResult) {
   window.open(url, '_blank');
 };
 
-// ユーティリティ関数（既存のロジックを維持）
-function calculateRadarData(numerology: any, mbti: any) {
-  // 簡易的なデータ生成（実際はもっと複雑なロジックでも良い）
-  return {
-    labels: ['直感力', '分析力', '行動力', '協調性', '創造性'],
-    datasets: [{
-      label: 'あなたの特性',
-      data: [
-        (numerology.talentNumber % 5) + 5,
-        (numerology.essenceNumber % 5) + 5,
-        (numerology.inquiryNumber % 5) + 5,
-        mbti.type.includes('F') ? 9 : 4,
-        mbti.type.includes('N') ? 9 : 5
-      ],
-      backgroundColor: 'rgba(2, 136, 209, 0.2)',
-      borderColor: 'rgba(2, 136, 209, 1)',
-      borderWidth: 2,
-      pointBackgroundColor: '#fff'
-    }]
-  };
-}
+// 旧calculateRadarData関数は削除されました
 
 function renderRadarChart(data: any) {
   const ctx = document.getElementById('radar-chart-canvas') as HTMLCanvasElement;
